@@ -7,19 +7,24 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import AppLayout from '@/components/AppLayout';
 import Login from '@/pages/Login';
 import ForgotPassword from '@/pages/ForgotPassword';
+import ChangePassword from '@/pages/ChangePassword';
 import PortalDashboard from '@/pages/PortalDashboard';
 import Users from '@/pages/Users';
 import Businesses from '@/pages/Businesses';
 import Subscriptions from '@/pages/Subscriptions';
 import Analytics from '@/pages/Analytics';
 import ActivityLogs from '@/pages/ActivityLogs';
-import ApiKeys from '@/pages/ApiKeys';
+import Reports from '@/pages/Reports';
 import AiConsumption from '@/pages/AiConsumption';
 import RolesPermissions from '@/pages/RolesPermissions';
 import Support from '@/pages/Support';
 import NotFound from '@/pages/NotFound';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: 1, refetchOnWindowFocus: false },
+  },
+});
 
 const App: FC = () => (
   <QueryClientProvider client={queryClient}>
@@ -30,6 +35,7 @@ const App: FC = () => (
           <Routes>
             <Route path='/login' element={<Login />} />
             <Route path='/forgot-password' element={<ForgotPassword />} />
+            <Route path='/change-password' element={<ChangePassword />} />
             <Route element={<AppLayout />}>
               <Route path='/dashboard' element={<PortalDashboard />} />
               <Route path='/users' element={<Users />} />
@@ -37,7 +43,7 @@ const App: FC = () => (
               <Route path='/businesses' element={<Businesses />} />
               <Route path='/subscriptions' element={<Subscriptions />} />
               <Route path='/analytics' element={<Analytics />} />
-              <Route path='/api-keys' element={<ApiKeys />} />
+              <Route path='/reports' element={<Reports />} />
               <Route path='/ai-consumption' element={<AiConsumption />} />
               <Route path='/roles' element={<RolesPermissions />} />
               <Route path='/support' element={<Support />} />

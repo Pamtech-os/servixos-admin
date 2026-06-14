@@ -1,140 +1,129 @@
-import { useState, useMemo, type FC } from 'react';
+import { useState, useEffect, type FC } from 'react';
 import { motion } from 'framer-motion';
-import { Eye, Ban, Mail, CheckCircle2, Search } from 'lucide-react';
+import { Eye, Ban, Mail, CheckCircle2, Building2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { businesses as initialBusinesses, type Business } from '@/lib/admin-mock-data';
 import { toast } from 'sonner';
-import { usePagination } from '@/hooks/usePagination';
+import { ApiError } from '@/lib/api-client';
+import { useDebounce } from '@/hooks/useDebounce';
 import { useSelection } from '@/hooks/useSelection';
 import {
-  PageHeader,
-  DataTablePagination,
-  SearchFilterBar,
-  ConfirmDialog,
-  EmailDialog,
-  EmptyState,
-  BulkActions,
+  useBusinesses, useToggleSuspendBusiness,
+  useBulkToggleSuspendBusinesses, useSendBusinessEmail,
+} from '@/hooks/useBusinesses';
+import {
+  PageHeader, DataTablePagination, SearchFilterBar,
+  ConfirmDialog, EmailDialog, EmptyState, BulkActions,
 } from '@/components/shared';
+import type { ApiBusiness, BusinessStatusFilter } from '@/types/businesses';
 
-const statusConfig: Record<Business['status'], { label: string; className: string }> = {
-  active: {
-    label: 'Active',
-    className: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-  },
-  suspended: {
-    label: 'Suspended',
-    className: 'bg-destructive/10 text-destructive border-destructive/20',
-  },
-  pending: { label: 'Pending', className: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
+const STATUS_CONFIG = {
+  active:    { label: 'Active',    className: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' },
+  suspended: { label: 'Suspended', className: 'bg-destructive/10 text-destructive border-destructive/20' },
+} as const;
+
+const PLAN_COLORS: Record<string, string> = {
+  free:       'bg-muted text-muted-foreground',
+  starter:    'bg-primary/10 text-primary',
+  pro:        'bg-secondary/10 text-secondary',
+  enterprise: 'bg-accent/10 text-accent',
 };
 
-const planColors: Record<Business['plan'], string> = {
-  Free: 'bg-muted text-muted-foreground',
-  Starter: 'bg-primary/10 text-primary',
-  Pro: 'bg-secondary/10 text-secondary',
-  Enterprise: 'bg-accent/10 text-accent',
-};
+const STATUS_FILTERS: { value: BusinessStatusFilter; label: string }[] = [
+  { value: 'all', label: 'All Status' },
+  { value: 'active', label: 'Active' },
+  { value: 'suspended', label: 'Suspended' },
+];
+const PAGE_LIMIT = 10;
 
-const statuses: (Business['status'] | 'all')[] = ['all', 'active', 'suspended', 'pending'];
+function bizStatus(b: ApiBusiness): 'active' | 'suspended' {
+  return b.isSuspended === true ? 'suspended' : 'active';
+}
 
 const Businesses: FC = () => {
-  const [businessList, setBusinessList] = useState<Business[]>(initialBusinesses);
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<Business['status'] | 'all'>('all');
-  const [detailBiz, setDetailBiz] = useState<Business | null>(null);
+  const [statusFilter, setStatusFilter] = useState<BusinessStatusFilter>('all');
+  const [detailBiz, setDetailBiz] = useState<ApiBusiness | null>(null);
 
-  // Confirm dialog
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmIds, setConfirmIds] = useState<string[]>([]);
   const [confirmAction, setConfirmAction] = useState<'suspend' | 'reactivate'>('suspend');
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
-  // Email dialog
   const [emailOpen, setEmailOpen] = useState(false);
   const [emailTargets, setEmailTargets] = useState<{ id: string; name: string }[]>([]);
 
-  const filtered = useMemo(() => {
-    return businessList.filter((b) => {
-      const matchesSearch =
-        !search ||
-        b.fullName.toLowerCase().includes(search.toLowerCase()) ||
-        b.email.toLowerCase().includes(search.toLowerCase()) ||
-        b.businessName.toLowerCase().includes(search.toLowerCase());
-      const matchesStatus = statusFilter === 'all' || b.status === statusFilter;
-      return matchesSearch && matchesStatus;
-    });
-  }, [businessList, search, statusFilter]);
+  const debouncedSearch = useDebounce(search, 350);
 
-  const {
-    currentPage,
-    totalPages,
-    paginated,
-    setCurrentPage,
-    startIndex,
-    endIndex,
-    totalItems,
-    resetPage,
-  } = usePagination(filtered);
-  const { selected, toggle, toggleAll, clear, isAllSelected } = useSelection(paginated);
+  const { data, isLoading, isFetching } = useBusinesses({
+    page, limit: PAGE_LIMIT, search: debouncedSearch, status: statusFilter,
+  });
 
-  const resetFilters = () => {
-    resetPage();
-    clear();
-  };
+  const toggleSuspend = useToggleSuspendBusiness();
+  const bulkToggle = useBulkToggleSuspendBusinesses();
+  const sendEmail = useSendBusinessEmail();
 
-  const openConfirmDialog = (ids: string[]) => {
-    const targets = businessList.filter((b) => ids.includes(b.id));
-    setConfirmAction(targets.every((b) => b.status === 'suspended') ? 'reactivate' : 'suspend');
+  const businesses = data?.businesses ?? [];
+  const meta = data?.meta;
+
+  const { selected, toggle, toggleAll, clear, isAllSelected } = useSelection(businesses);
+
+  useEffect(() => { clear(); }, [page, clear]);
+
+  const resetFilters = () => { setPage(1); clear(); };
+
+  const openConfirmDialog = (ids: string[], currentList: ApiBusiness[]) => {
+    const targets = currentList.filter((b) => ids.includes(b.id));
+    const allSuspended = targets.every((b) => b.isSuspended);
+    setConfirmAction(allSuspended ? 'reactivate' : 'suspend');
     setConfirmIds(ids);
     setConfirmOpen(true);
   };
 
-  const executeStatusChange = () => {
-    setBusinessList((prev) =>
-      prev.map((b) =>
-        confirmIds.includes(b.id)
-          ? {
-              ...b,
-              status: b.status === 'suspended' ? ('active' as const) : ('suspended' as const),
-            }
-          : b
-      )
-    );
-    clear();
-    setConfirmOpen(false);
-    toast.success(
-      `${confirmIds.length} business(es) ${
-        confirmAction === 'suspend' ? 'suspended' : 'reactivated'
-      }`
-    );
-    if (detailBiz && confirmIds.includes(detailBiz.id)) setDetailBiz(null);
+  const executeStatusChange = async () => {
+    setConfirmLoading(true);
+    try {
+      if (confirmIds.length === 1) {
+        await toggleSuspend.mutateAsync({ id: confirmIds[0], action: confirmAction });
+      } else {
+        await bulkToggle.mutateAsync(confirmIds);
+      }
+      clear();
+      setConfirmOpen(false);
+      if (detailBiz && confirmIds.includes(detailBiz.id)) setDetailBiz(null);
+      toast.success(
+        `${confirmIds.length} business${confirmIds.length > 1 ? 'es' : ''} ${confirmAction === 'suspend' ? 'suspended' : 'reactivated'}`
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Action failed');
+    } finally {
+      setConfirmLoading(false);
+    }
   };
 
-  const openEmailDialog = (targets: Business[]) => {
-    setEmailTargets(targets.map((t) => ({ id: t.id, name: t.businessName })));
+  const openEmailDialog = (targets: ApiBusiness[]) => {
+    setEmailTargets(targets.map((b) => ({ id: b.id, name: b.name })));
     setEmailOpen(true);
   };
 
-  const selectedBusinesses = businessList.filter((b) => selected.has(b.id));
+  const handleSendEmail = async (subject: string, message: string) => {
+    await sendEmail.mutateAsync({ ids: emailTargets.map((t) => t.id), subject, message });
+  };
+
+  const selectedBusinesses = businesses.filter((b) => selected.has(b.id));
 
   return (
     <div className='space-y-6'>
@@ -142,28 +131,22 @@ const Businesses: FC = () => {
 
       <SearchFilterBar
         searchValue={search}
-        onSearchChange={(v) => {
-          setSearch(v);
-          resetFilters();
-        }}
-        searchPlaceholder='Search by name, email, or business...'
+        onSearchChange={(v) => { setSearch(v); resetFilters(); }}
+        searchPlaceholder='Search by name or owner email...'
         filters={
-          <div className='flex gap-2 flex-wrap'>
-            {statuses.map((s) => (
-              <Button
-                key={s}
-                variant={statusFilter === s ? 'default' : 'outline'}
-                size='sm'
-                onClick={() => {
-                  setStatusFilter(s);
-                  resetFilters();
-                }}
-                className={statusFilter === s ? 'gradient-bg text-primary-foreground' : ''}
-              >
-                {s === 'all' ? 'All Status' : statusConfig[s].label}
-              </Button>
-            ))}
-          </div>
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => { setStatusFilter(v as BusinessStatusFilter); resetFilters(); }}
+          >
+            <SelectTrigger className='w-40'>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_FILTERS.map(({ value, label }) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         }
       />
 
@@ -171,7 +154,7 @@ const Businesses: FC = () => {
         <Button
           size='sm'
           variant='outline'
-          onClick={() => openConfirmDialog(Array.from(selected))}
+          onClick={() => openConfirmDialog(Array.from(selected), businesses)}
           className='gap-1'
         >
           <Ban className='h-3.5 w-3.5' /> Toggle Suspend
@@ -200,98 +183,95 @@ const Businesses: FC = () => {
                     <TableHead className='w-10'>
                       <Checkbox checked={isAllSelected} onCheckedChange={toggleAll} />
                     </TableHead>
-                    <TableHead>User</TableHead>
+                    <TableHead>Owner</TableHead>
                     <TableHead>Business</TableHead>
                     <TableHead>Plan</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
                     <TableHead className='text-right'>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginated.map((biz) => (
-                    <TableRow key={biz.id} className='border-b border-border transition-colors hover:bg-muted/50'>
-                      <TableCell>
-                        <Checkbox
-                          checked={selected.has(biz.id)}
-                          onCheckedChange={() => toggle(biz.id)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <p className='text-sm font-medium'>{biz.fullName}</p>
-                          <p className='text-xs text-muted-foreground'>{biz.email}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell className='text-sm font-medium'>{biz.businessName}</TableCell>
-                      <TableCell>
-                        <span
-                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                            planColors[biz.plan]
-                          }`}
+                  {isLoading ? (
+                    [...Array(PAGE_LIMIT)].map((_, i) => (
+                      <TableRow key={i}>
+                        {[...Array(7)].map((__, j) => (
+                          <TableCell key={j}>
+                            <div className='h-4 animate-pulse rounded bg-muted/60' />
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  ) : businesses.length === 0 ? (
+                    <EmptyState icon={Building2} message='No businesses match your filters.' colSpan={7} />
+                  ) : (
+                    businesses.map((biz) => {
+                      const status = bizStatus(biz);
+                      const planKey = (biz.subscription?.plan ?? '').toLowerCase();
+                      return (
+                        <TableRow
+                          key={biz.id}
+                          className={`border-b border-border transition-colors hover:bg-muted/50 ${isFetching ? 'opacity-60' : ''}`}
                         >
-                          {biz.plan}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant='outline' className={statusConfig[biz.status].className}>
-                          {statusConfig[biz.status].label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className='text-right'>
-                        <div className='flex items-center justify-end gap-1'>
-                          <Button
-                            variant='ghost'
-                            size='icon'
-                            className='h-8 w-8'
-                            onClick={() => setDetailBiz(biz)}
-                            title='View details'
-                          >
-                            <Eye className='h-4 w-4' />
-                          </Button>
-                          <Button
-                            variant='ghost'
-                            size='icon'
-                            className='h-8 w-8'
-                            onClick={() => openEmailDialog([biz])}
-                            title='Send email'
-                          >
-                            <Mail className='h-4 w-4' />
-                          </Button>
-                          <Button
-                            variant='ghost'
-                            size='icon'
-                            className='h-8 w-8'
-                            onClick={() => openConfirmDialog([biz.id])}
-                            title={biz.status === 'suspended' ? 'Reactivate' : 'Suspend'}
-                          >
-                            {biz.status === 'suspended' ? (
-                              <CheckCircle2 className='h-4 w-4 text-emerald-600' />
-                            ) : (
-                              <Ban className='h-4 w-4 text-destructive' />
-                            )}
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {paginated.length === 0 && (
-                    <EmptyState
-                      icon={Search}
-                      message='No businesses match your filters.'
-                      colSpan={6}
-                    />
+                          <TableCell>
+                            <Checkbox checked={selected.has(biz.id)} onCheckedChange={() => toggle(biz.id)} />
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <p className='text-sm font-medium'>{biz.ownerFirstName} {biz.ownerLastName}</p>
+                              <p className='text-xs text-muted-foreground'>{biz.ownerEmail}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell className='text-sm font-medium'>{biz.name}</TableCell>
+                          <TableCell>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PLAN_COLORS[planKey] ?? 'bg-muted text-muted-foreground'}`}>
+                              {planKey.charAt(0).toUpperCase() + planKey.slice(1)}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant='outline' className={STATUS_CONFIG[status].className}>
+                              {STATUS_CONFIG[status].label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className='text-sm text-muted-foreground'>
+                            {new Date(biz.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </TableCell>
+                          <TableCell className='text-right'>
+                            <div className='flex items-center justify-end gap-1'>
+                              <Button variant='ghost' size='icon' className='h-8 w-8' onClick={() => setDetailBiz(biz)} title='View'>
+                                <Eye className='h-4 w-4' />
+                              </Button>
+                              <Button variant='ghost' size='icon' className='h-8 w-8' onClick={() => openEmailDialog([biz])} title='Email'>
+                                <Mail className='h-4 w-4' />
+                              </Button>
+                              <Button
+                                variant='ghost' size='icon' className='h-8 w-8'
+                                onClick={() => openConfirmDialog([biz.id], businesses)}
+                                title={biz.isSuspended ? 'Reactivate' : 'Suspend'}
+                              >
+                                {biz.isSuspended
+                                  ? <CheckCircle2 className='h-4 w-4 text-emerald-600' />
+                                  : <Ban className='h-4 w-4 text-destructive' />}
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
             </div>
-            <DataTablePagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              startIndex={startIndex}
-              endIndex={endIndex}
-              totalItems={totalItems}
-              onPageChange={setCurrentPage}
-            />
+            {meta && (
+              <DataTablePagination
+                currentPage={meta.page}
+                totalPages={meta.totalPages}
+                startIndex={(meta.page - 1) * meta.limit + 1}
+                endIndex={Math.min(meta.page * meta.limit, meta.total)}
+                totalItems={meta.total}
+                onPageChange={setPage}
+              />
+            )}
           </CardContent>
         </Card>
       </motion.div>
@@ -301,76 +281,71 @@ const Businesses: FC = () => {
         <DialogContent className='sm:max-w-md'>
           <DialogHeader>
             <DialogTitle>Business Details</DialogTitle>
-            <DialogDescription>Full details for {detailBiz?.businessName}</DialogDescription>
+            <DialogDescription>{detailBiz?.name}</DialogDescription>
           </DialogHeader>
-          {detailBiz && (
-            <div className='space-y-4'>
-              <div className='grid grid-cols-2 gap-4'>
-                <div>
-                  <Label className='text-xs text-muted-foreground'>Full Name</Label>
-                  <p className='text-sm font-medium'>{detailBiz.fullName}</p>
-                </div>
-                <div>
-                  <Label className='text-xs text-muted-foreground'>Email</Label>
-                  <p className='text-sm font-medium'>{detailBiz.email}</p>
-                </div>
-                <div>
-                  <Label className='text-xs text-muted-foreground'>Business</Label>
-                  <p className='text-sm font-medium'>{detailBiz.businessName}</p>
-                </div>
-                <div>
-                  <Label className='text-xs text-muted-foreground'>Plan</Label>
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                      planColors[detailBiz.plan]
-                    }`}
-                  >
-                    {detailBiz.plan}
-                  </span>
-                </div>
-                <div>
-                  <Label className='text-xs text-muted-foreground'>Date Joined</Label>
-                  <p className='text-sm font-medium'>
-                    {detailBiz.dateJoined.toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                    })}
-                  </p>
-                </div>
-                <div>
-                  <Label className='text-xs text-muted-foreground'>Status</Label>
-                  <Badge variant='outline' className={statusConfig[detailBiz.status].className}>
-                    {statusConfig[detailBiz.status].label}
-                  </Badge>
+          {detailBiz && (() => {
+            const status = bizStatus(detailBiz);
+            const detailPlanKey = (detailBiz.subscription?.plan ?? '').toLowerCase();
+            return (
+              <div className='space-y-4'>
+                <div className='grid grid-cols-2 gap-4'>
+                  <div>
+                    <Label className='text-xs text-muted-foreground'>Business</Label>
+                    <p className='text-sm font-medium'>{detailBiz.name}</p>
+                  </div>
+                  <div>
+                    <Label className='text-xs text-muted-foreground'>Plan</Label>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${PLAN_COLORS[detailPlanKey] ?? 'bg-muted text-muted-foreground'}`}>
+                      {detailPlanKey.charAt(0).toUpperCase() + detailPlanKey.slice(1)}
+                    </span>
+                  </div>
+                  <div>
+                    <Label className='text-xs text-muted-foreground'>Owner</Label>
+                    <p className='text-sm font-medium'>{detailBiz.ownerFirstName} {detailBiz.ownerLastName}</p>
+                  </div>
+                  <div>
+                    <Label className='text-xs text-muted-foreground'>Owner Email</Label>
+                    <p className='text-sm font-medium break-all'>{detailBiz.ownerEmail}</p>
+                  </div>
+                  {detailBiz.categoryName && (
+                    <div>
+                      <Label className='text-xs text-muted-foreground'>Category</Label>
+                      <p className='text-sm font-medium'>{detailBiz.categoryName}</p>
+                    </div>
+                  )}
+                  <div>
+                    <Label className='text-xs text-muted-foreground'>Subscription</Label>
+                    <p className='text-sm font-medium capitalize'>{detailBiz.subscription?.status ?? '—'}</p>
+                  </div>
+                  <div>
+                    <Label className='text-xs text-muted-foreground'>Created</Label>
+                    <p className='text-sm font-medium'>
+                      {new Date(detailBiz.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className='text-xs text-muted-foreground'>Status</Label>
+                    <Badge variant='outline' className={STATUS_CONFIG[status].className}>
+                      {STATUS_CONFIG[status].label}
+                    </Badge>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
           <DialogFooter className='gap-2'>
-            <Button
-              variant='outline'
-              size='sm'
-              onClick={() => detailBiz && openEmailDialog([detailBiz])}
-              className='gap-1'
-            >
+            <Button variant='outline' size='sm' onClick={() => detailBiz && openEmailDialog([detailBiz])} className='gap-1'>
               <Mail className='h-3.5 w-3.5' /> Send Email
             </Button>
             <Button
-              variant={detailBiz?.status === 'suspended' ? 'default' : 'destructive'}
+              variant={detailBiz?.isSuspended ? 'default' : 'destructive'}
               size='sm'
-              onClick={() => detailBiz && openConfirmDialog([detailBiz.id])}
+              onClick={() => detailBiz && openConfirmDialog([detailBiz.id], businesses)}
               className='gap-1'
             >
-              {detailBiz?.status === 'suspended' ? (
-                <>
-                  <CheckCircle2 className='h-3.5 w-3.5' /> Reactivate
-                </>
-              ) : (
-                <>
-                  <Ban className='h-3.5 w-3.5' /> Suspend
-                </>
-              )}
+              {detailBiz?.isSuspended
+                ? <><CheckCircle2 className='h-3.5 w-3.5' /> Reactivate</>
+                : <><Ban className='h-3.5 w-3.5' /> Suspend</>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -379,20 +354,24 @@ const Businesses: FC = () => {
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title={confirmAction === 'suspend' ? 'Suspend Business' : 'Reactivate Business'}
+        title={confirmAction === 'suspend' ? 'Suspend Business(es)' : 'Reactivate Business(es)'}
         description={`Are you sure you want to ${confirmAction} ${
           confirmIds.length === 1 ? 'this business' : `${confirmIds.length} businesses`
-        }? ${
-          confirmAction === 'suspend'
-            ? 'They will lose access to the platform.'
-            : 'They will regain access to the platform.'
-        }`}
+        }? ${confirmAction === 'suspend'
+          ? 'All staff accounts will also be deactivated.'
+          : 'All staff accounts will be restored.'}`}
         confirmLabel={confirmAction === 'suspend' ? 'Suspend' : 'Reactivate'}
         variant={confirmAction === 'suspend' ? 'destructive' : 'default'}
-        onConfirm={executeStatusChange}
+        onConfirm={() => void executeStatusChange()}
+        loading={confirmLoading}
       />
 
-      <EmailDialog open={emailOpen} onOpenChange={setEmailOpen} targets={emailTargets} />
+      <EmailDialog
+        open={emailOpen}
+        onOpenChange={setEmailOpen}
+        targets={emailTargets}
+        onSend={handleSendEmail}
+      />
     </div>
   );
 };

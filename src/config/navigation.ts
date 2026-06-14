@@ -5,7 +5,7 @@ import {
   CreditCard,
   BarChart3,
   ClipboardList,
-  Key,
+  FileBarChart2,
   Brain,
   Shield,
   LifeBuoy,
@@ -18,21 +18,15 @@ export interface NavItem {
   icon: LucideIcon;
 }
 
-/**
- * Central navigation config. To add a new page:
- * 1. Add an entry here
- * 2. Create the page component
- * 3. Add a lazy route in App.tsx
- */
 export const navItems: NavItem[] = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Users', href: '/users', icon: Users },
-  { label: 'Businesses', href: '/businesses', icon: Building2 },
-  { label: 'Subscriptions', href: '/subscriptions', icon: CreditCard },
-  { label: 'Analytics', href: '/analytics', icon: BarChart3 },
-  { label: 'Activity Logs', href: '/activity-logs', icon: ClipboardList },
-  { label: 'API Keys', href: '/api-keys', icon: Key },
-  { label: 'AI Consumption', href: '/ai-consumption', icon: Brain },
-  { label: 'Roles & Permissions', href: '/roles', icon: Shield },
-  { label: 'Support', href: '/support', icon: LifeBuoy },
+  { label: 'Dashboard',         href: '/dashboard',    icon: LayoutDashboard },
+  { label: 'Users',             href: '/users',        icon: Users },
+  { label: 'Businesses',        href: '/businesses',   icon: Building2 },
+  { label: 'Subscriptions',     href: '/subscriptions',icon: CreditCard },
+  { label: 'Analytics',         href: '/analytics',    icon: BarChart3 },
+  { label: 'Activity Logs',     href: '/activity-logs',icon: ClipboardList },
+  { label: 'Reports',           href: '/reports',      icon: FileBarChart2 },
+  { label: 'AI Consumption',    href: '/ai-consumption',icon: Brain },
+  { label: 'Roles & Permissions',href: '/roles',       icon: Shield },
+  { label: 'Support',           href: '/support',      icon: LifeBuoy },
 ];
