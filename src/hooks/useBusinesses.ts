@@ -29,16 +29,11 @@ export const useBulkToggleSuspendBusinesses = () => {
 
 export const useSendBusinessEmail = () =>
   useMutation({
-    mutationFn: ({
-      ids,
-      subject,
-      message,
-    }: {
-      ids: string[];
-      subject: string;
-      message: string;
-    }) =>
-      ids.length === 1
-        ? businessesService.sendEmailSingle(ids[0], subject, message)
-        : businessesService.sendEmailBulk(ids, subject, message),
+    mutationFn: async ({ ids, subject, message }: { ids: string[]; subject: string; message: string }) => {
+      if (ids.length === 1) {
+        await businessesService.sendEmailSingle(ids[0], subject, message);
+      } else {
+        await businessesService.sendEmailBulk(ids, subject, message);
+      }
+    },
   });

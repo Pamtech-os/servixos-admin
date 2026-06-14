@@ -43,19 +43,18 @@ function applySession(data: LoginSuccessData, setState: (s: AuthState) => void) 
 }
 
 const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
-  const [state, setState] = useState<AuthState>({
+  const [state, setState] = useState<AuthState>(() => ({
     admin: null,
     mustChangePassword: false,
     isAuthenticated: false,
-    isLoading: true,
-  });
+    isLoading: !!storage.getRefreshToken(),
+  }));
 
   useEffect(() => {
     let cancelled = false;
 
     const rt = storage.getRefreshToken();
     if (!rt) {
-      setState((s) => ({ ...s, isLoading: false }));
       return;
     }
 

@@ -40,16 +40,11 @@ export const useResetUserPassword = () =>
 
 export const useSendUserEmail = () =>
   useMutation({
-    mutationFn: ({
-      ids,
-      subject,
-      message,
-    }: {
-      ids: string[];
-      subject: string;
-      message: string;
-    }) =>
-      ids.length === 1
-        ? usersService.sendEmailSingle(ids[0], subject, message)
-        : usersService.sendEmailBulk(ids, subject, message),
+    mutationFn: async ({ ids, subject, message }: { ids: string[]; subject: string; message: string }) => {
+      if (ids.length === 1) {
+        await usersService.sendEmailSingle(ids[0], subject, message);
+      } else {
+        await usersService.sendEmailBulk(ids, subject, message);
+      }
+    },
   });

@@ -20,12 +20,12 @@ export const reportsService = {
 
   list: async (page: number, limit: number): Promise<ReportsPage> => {
     const { data, meta } = await apiClient.getList<RawReport[]>(`/reports?page=${page}&limit=${limit}`);
-    return { reports: data.map(normalizeReport), meta: meta as ReportsPage['meta'] };
+    return { reports: data.map(normalizeReport), meta: meta as unknown as ReportsPage['meta'] };
   },
 
   scheduled: async (page: number, limit: number): Promise<SchedulesPage> => {
     const { data, meta } = await apiClient.getList<RawSchedule[]>(`/reports/scheduled?page=${page}&limit=${limit}`);
-    return { schedules: data.map(normalizeSchedule), meta: meta as SchedulesPage['meta'] };
+    return { schedules: data.map(normalizeSchedule), meta: meta as unknown as SchedulesPage['meta'] };
   },
 
   generate: (payload: GenerateReportPayload) =>

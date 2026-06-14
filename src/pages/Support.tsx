@@ -103,7 +103,6 @@ const Support: FC = () => {
   const resolveTicket = useResolveTicket();
   const closeTicket = useCloseTicket();
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter]);
 
   useEffect(() => {
     if (ticket?.replies?.length) {
@@ -198,12 +197,12 @@ const Support: FC = () => {
 
       <SearchFilterBar
         searchValue={search}
-        onSearchChange={(v) => setSearch(v)}
+        onSearchChange={(v) => { setSearch(v); setPage(1); }}
         searchPlaceholder='Search by subject or requester...'
         filters={
           <Select
             value={statusFilter}
-            onValueChange={(v) => setStatusFilter(v as SupportStatusFilter)}
+            onValueChange={(v) => { setStatusFilter(v as SupportStatusFilter); setPage(1); }}
           >
             <SelectTrigger className='w-40'>
               <SelectValue />

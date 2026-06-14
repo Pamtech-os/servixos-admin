@@ -1,4 +1,4 @@
-import { useState, useEffect, type FC } from 'react';
+import { useState, type FC } from 'react';
 import { motion } from 'framer-motion';
 import { ClipboardList } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -52,7 +52,6 @@ const ActivityLogs: FC = () => {
     actorRole,
   });
 
-  useEffect(() => { setPage(1); }, [debouncedSearch, actorRole]);
 
   const logs = data?.logs ?? [];
   const meta = data?.meta;
@@ -66,12 +65,12 @@ const ActivityLogs: FC = () => {
 
       <SearchFilterBar
         searchValue={search}
-        onSearchChange={(v) => { setSearch(v); }}
+        onSearchChange={(v) => { setSearch(v); setPage(1); }}
         searchPlaceholder='Search by actor name, action, or target...'
         filters={
           <Select
             value={actorRole}
-            onValueChange={(v) => { setActorRole(v); }}
+            onValueChange={(v) => { setActorRole(v); setPage(1); }}
           >
             <SelectTrigger className='w-36'>
               <SelectValue />
