@@ -1,17 +1,20 @@
-import { useState, useMemo, type FC } from 'react';
+import { useState, useRef, useEffect, type FC } from 'react';
 import {
-  Eye,
-  MessageSquare,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  Inbox,
-  Users,
-  LifeBuoy,
+  Eye, MessageSquare, Clock, CheckCircle2, XCircle,
+  Inbox, LifeBuoy, Loader2, UserCheck,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -28,656 +31,480 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { formatRelativeTime } from '@/lib/format';
-import { usePagination } from '@/hooks/usePagination';
+import { ApiError } from '@/lib/api-client';
 import {
   PageHeader,
-  StatsGrid,
-  DataTablePagination,
   SearchFilterBar,
+  DataTablePagination,
   EmptyState,
 } from '@/components/shared';
+import {
+  useSupport,
+  useSupportTicket,
+  useSupportAdmins,
+  useAssignTicket,
+  useReplyTicket,
+  useResolveTicket,
+  useCloseTicket,
+} from '@/hooks/useSupport';
+import { useDebounce } from '@/hooks/useDebounce';
+import { formatRelativeTime } from '@/lib/format';
+import type { SupportStatusFilter, Ticket } from '@/types/support';
 
-// ─── Types ──────────────────────────────────────────────────────
-type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
-type TicketPriority = 'low' | 'medium' | 'high' | 'urgent';
-
-interface Ticket {
-  id: string;
-  subject: string;
-  requester: string;
-  requesterEmail: string;
-  businessName: string;
-  status: TicketStatus;
-  priority: TicketPriority;
-  assignee: string;
-  category: string;
-  createdAt: Date;
-  updatedAt: Date;
-  description: string;
-}
-
-// ─── Mock Data ──────────────────────────────────────────────────
-const now = Date.now();
-const hr = 3600000;
-const day = 86400000;
-
-const initialTickets: Ticket[] = [
-  {
-    id: 'T-1001',
-    subject: 'Unable to access API dashboard',
-    requester: 'John Carter',
-    requesterEmail: 'john@technova.io',
-    businessName: 'TechNova Inc.',
-    status: 'open',
-    priority: 'high',
-    assignee: 'Maria Lopez',
-    category: 'Technical',
-    createdAt: new Date(now - hr * 2),
-    updatedAt: new Date(now - hr * 1),
-    description: 'Getting a 403 error when trying to access the API keys section.',
-  },
-  {
-    id: 'T-1002',
-    subject: 'Billing discrepancy on last invoice',
-    requester: 'Emily Zhang',
-    requesterEmail: 'emily@cloudbase.io',
-    businessName: 'CloudBase Technologies',
-    status: 'in_progress',
-    priority: 'medium',
-    assignee: 'James Wilson',
-    category: 'Billing',
-    createdAt: new Date(now - hr * 8),
-    updatedAt: new Date(now - hr * 3),
-    description: 'Invoice shows $420 but expected $380 based on our plan.',
-  },
-  {
-    id: 'T-1003',
-    subject: 'Request to increase AI query limit',
-    requester: 'Marcus Thompson',
-    requesterEmail: 'marcus@designcraft.co',
-    businessName: 'DesignCraft Studio',
-    status: 'open',
-    priority: 'medium',
-    assignee: 'Unassigned',
-    category: 'Account',
-    createdAt: new Date(now - hr * 12),
-    updatedAt: new Date(now - hr * 12),
-    description: 'We need to increase our daily AI query limit from 5,000 to 10,000.',
-  },
-  {
-    id: 'T-1004',
-    subject: 'Two-factor authentication not working',
-    requester: 'Priya Sharma',
-    requesterEmail: 'priya@servix.solutions',
-    businessName: 'Servix Solutions',
-    status: 'resolved',
-    priority: 'high',
-    assignee: 'Maria Lopez',
-    category: 'Technical',
-    createdAt: new Date(now - day * 1),
-    updatedAt: new Date(now - hr * 6),
-    description: '2FA codes are not being accepted, locked out of account.',
-  },
-  {
-    id: 'T-1005',
-    subject: 'Need help with webhook setup',
-    requester: 'Alex Rivera',
-    requesterEmail: 'alex@stellar.llc',
-    businessName: 'Stellar Dynamics LLC',
-    status: 'open',
-    priority: 'low',
-    assignee: 'Unassigned',
-    category: 'Technical',
-    createdAt: new Date(now - day * 1.5),
-    updatedAt: new Date(now - day * 1.5),
-    description: 'Looking for guidance on setting up webhooks for order notifications.',
-  },
-  {
-    id: 'T-1006',
-    subject: 'Account suspension inquiry',
-    requester: 'Laura Bennett',
-    requesterEmail: 'laura@pixelwave.co',
-    businessName: 'PixelWave Creative',
-    status: 'in_progress',
-    priority: 'urgent',
-    assignee: 'Sarah Chen',
-    category: 'Account',
-    createdAt: new Date(now - hr * 4),
-    updatedAt: new Date(now - hr * 2),
-    description: 'Our account was suspended without notice. Need immediate resolution.',
-  },
-  {
-    id: 'T-1007',
-    subject: 'Feature request: bulk export',
-    requester: "Ryan O'Brien",
-    requesterEmail: 'ryan@dataflow.ai',
-    businessName: 'DataFlow AI',
-    status: 'closed',
-    priority: 'low',
-    assignee: 'David Kim',
-    category: 'Feature Request',
-    createdAt: new Date(now - day * 5),
-    updatedAt: new Date(now - day * 2),
-    description: 'Would like the ability to bulk export analytics data as CSV.',
-  },
-  {
-    id: 'T-1008',
-    subject: 'Slow dashboard loading times',
-    requester: 'Tom Fischer',
-    requesterEmail: 'tom@buildright.dev',
-    businessName: 'BuildRight Dev',
-    status: 'open',
-    priority: 'high',
-    assignee: 'Maria Lopez',
-    category: 'Technical',
-    createdAt: new Date(now - hr * 6),
-    updatedAt: new Date(now - hr * 5),
-    description: 'Dashboard takes 10+ seconds to load, especially analytics page.',
-  },
-  {
-    id: 'T-1009',
-    subject: 'Subscription downgrade process',
-    requester: 'Nina Kowalski',
-    requesterEmail: 'nina@brightpath.io',
-    businessName: 'BrightPath Analytics',
-    status: 'resolved',
-    priority: 'medium',
-    assignee: 'James Wilson',
-    category: 'Billing',
-    createdAt: new Date(now - day * 3),
-    updatedAt: new Date(now - day * 1),
-    description: 'Want to downgrade from Enterprise to Pro plan effective next billing cycle.',
-  },
-  {
-    id: 'T-1010',
-    subject: 'Data migration assistance',
-    requester: 'Wei Chen',
-    requesterEmail: 'wei@quantumedge.ai',
-    businessName: 'QuantumEdge AI',
-    status: 'in_progress',
-    priority: 'high',
-    assignee: 'David Kim',
-    category: 'Technical',
-    createdAt: new Date(now - day * 2),
-    updatedAt: new Date(now - hr * 10),
-    description: 'Need help migrating data from our legacy system to Servix OS.',
-  },
-  {
-    id: 'T-1011',
-    subject: 'Custom domain setup issues',
-    requester: 'Chloe Dubois',
-    requesterEmail: 'chloe@luxeinterior.com',
-    businessName: 'Luxe Interior Design',
-    status: 'open',
-    priority: 'medium',
-    assignee: 'Unassigned',
-    category: 'Technical',
-    createdAt: new Date(now - hr * 18),
-    updatedAt: new Date(now - hr * 18),
-    description: 'DNS records configured but custom domain still not working.',
-  },
-  {
-    id: 'T-1012',
-    subject: 'Partnership inquiry',
-    requester: 'Nathan Brooks',
-    requesterEmail: 'nathan@skyline.build',
-    businessName: 'Skyline Construction',
-    status: 'open',
-    priority: 'low',
-    assignee: 'Sarah Chen',
-    category: 'General',
-    createdAt: new Date(now - day * 4),
-    updatedAt: new Date(now - day * 3),
-    description: 'Interested in discussing a partnership/reseller arrangement.',
-  },
-  {
-    id: 'T-1013',
-    subject: 'Payment method update failed',
-    requester: 'Carlos Mendez',
-    requesterEmail: 'carlos@quickship.co',
-    businessName: 'QuickShip Logistics',
-    status: 'resolved',
-    priority: 'medium',
-    assignee: 'James Wilson',
-    category: 'Billing',
-    createdAt: new Date(now - day * 2),
-    updatedAt: new Date(now - hr * 20),
-    description: 'Cannot update credit card on file — getting a payment processing error.',
-  },
-  {
-    id: 'T-1014',
-    subject: 'Employee onboarding guide needed',
-    requester: 'Liam Nguyen',
-    requesterEmail: 'liam@codeforge.dev',
-    businessName: 'CodeForge Studios',
-    status: 'closed',
-    priority: 'low',
-    assignee: 'Maria Lopez',
-    category: 'General',
-    createdAt: new Date(now - day * 7),
-    updatedAt: new Date(now - day * 5),
-    description: 'Looking for documentation on how to onboard team members properly.',
-  },
-  {
-    id: 'T-1015',
-    subject: 'API rate limiting causing failures',
-    requester: 'Oliver Grant',
-    requesterEmail: 'oliver@securelock.io',
-    businessName: 'SecureLock Systems',
-    status: 'in_progress',
-    priority: 'urgent',
-    assignee: 'David Kim',
-    category: 'Technical',
-    createdAt: new Date(now - hr * 3),
-    updatedAt: new Date(now - hr * 1),
-    description:
-      'Hitting rate limits during peak hours, causing integration failures for our clients.',
-  },
+const STATUS_FILTERS: { value: SupportStatusFilter; label: string }[] = [
+  { value: 'all',         label: 'All Status' },
+  { value: 'open',        label: 'Open' },
+  { value: 'in_progress', label: 'In Progress' },
+  { value: 'resolved',    label: 'Resolved' },
+  { value: 'closed',      label: 'Closed' },
 ];
 
-// ─── Config ─────────────────────────────────────────────────────
-const statusConfig: Record<TicketStatus, { label: string; className: string; icon: typeof Clock }> =
-  {
-    open: { label: 'Open', className: 'bg-primary/10 text-primary border-primary/20', icon: Inbox },
-    in_progress: {
-      label: 'In Progress',
-      className: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
-      icon: Clock,
-    },
-    resolved: {
-      label: 'Resolved',
-      className: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-      icon: CheckCircle2,
-    },
-    closed: {
-      label: 'Closed',
-      className: 'bg-muted text-muted-foreground border-border',
-      icon: XCircle,
-    },
-  };
+const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  open:        { label: 'Open',        className: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
+  in_progress: { label: 'In Progress', className: 'bg-primary/10 text-primary border-primary/20' },
+  resolved:    { label: 'Resolved',    className: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' },
+  closed:      { label: 'Closed',      className: 'bg-muted text-muted-foreground border-border' },
+};
 
-const priorityConfig: Record<TicketPriority, { label: string; className: string }> = {
-  low: { label: 'Low', className: 'bg-muted text-muted-foreground' },
-  medium: { label: 'Medium', className: 'bg-primary/10 text-primary' },
-  high: { label: 'High', className: 'bg-amber-500/10 text-amber-600' },
+const PRIORITY_CONFIG: Record<string, { label: string; className: string }> = {
+  low:    { label: 'Low',    className: 'bg-muted text-muted-foreground' },
+  medium: { label: 'Medium', className: 'bg-amber-500/10 text-amber-600' },
+  high:   { label: 'High',   className: 'bg-orange-500/10 text-orange-600' },
   urgent: { label: 'Urgent', className: 'bg-destructive/10 text-destructive' },
 };
 
-const assignees = ['Unassigned', 'Maria Lopez', 'James Wilson', 'Sarah Chen', 'David Kim'];
+const PAGE_LIMIT = 10;
 
-// ─── Component ──────────────────────────────────────────────────
 const Support: FC = () => {
-  const [tickets, setTickets] = useState<Ticket[]>(initialTickets);
-  const [ticketSearch, setTicketSearch] = useState('');
-  const [ticketStatusFilter, setTicketStatusFilter] = useState<TicketStatus | 'all'>('all');
-  const [detailTicket, setDetailTicket] = useState<Ticket | null>(null);
-  const [replyOpen, setReplyOpen] = useState(false);
-  const [replyMessage, setReplyMessage] = useState('');
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<SupportStatusFilter>('all');
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+
+  // Assign dialog
   const [assignOpen, setAssignOpen] = useState(false);
-  const [assignTicketId, setAssignTicketId] = useState('');
+  const [assignAdminId, setAssignAdminId] = useState('');
 
-  const filteredTickets = useMemo(() => {
-    return tickets.filter((t) => {
-      const matchSearch =
-        !ticketSearch ||
-        t.subject.toLowerCase().includes(ticketSearch.toLowerCase()) ||
-        t.requester.toLowerCase().includes(ticketSearch.toLowerCase()) ||
-        t.id.toLowerCase().includes(ticketSearch.toLowerCase());
-      const matchStatus = ticketStatusFilter === 'all' || t.status === ticketStatusFilter;
-      return matchSearch && matchStatus;
-    });
-  }, [tickets, ticketSearch, ticketStatusFilter]);
+  // Reply
+  const [replyText, setReplyText] = useState('');
+  const repliesEndRef = useRef<HTMLDivElement>(null);
 
-  const {
-    currentPage,
-    totalPages,
-    paginated,
-    setCurrentPage,
-    startIndex,
-    endIndex,
-    totalItems,
-    resetPage,
-  } = usePagination(filteredTickets);
+  const debouncedSearch = useDebounce(search, 350);
 
-  const ticketStats = {
-    open: tickets.filter((t) => t.status === 'open').length,
-    inProgress: tickets.filter((t) => t.status === 'in_progress').length,
-    resolved: tickets.filter((t) => t.status === 'resolved').length,
-    closed: tickets.filter((t) => t.status === 'closed').length,
-  };
+  const { data, isLoading, isFetching } = useSupport({
+    page, limit: PAGE_LIMIT, search: debouncedSearch, status: statusFilter,
+  });
+  const { data: ticket, isLoading: ticketLoading } = useSupportTicket(selectedTicketId);
+  const { data: admins = [] } = useSupportAdmins();
 
-  const updateTicketStatus = (id: string, status: TicketStatus) => {
-    setTickets((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, status, updatedAt: new Date() } : t))
-    );
-    toast.success(`Ticket ${id} marked as ${statusConfig[status].label}`);
-    if (detailTicket?.id === id) {
-      setDetailTicket((prev) => (prev ? { ...prev, status, updatedAt: new Date() } : null));
+  const assignTicket = useAssignTicket();
+  const replyTicket = useReplyTicket();
+  const resolveTicket = useResolveTicket();
+  const closeTicket = useCloseTicket();
+
+  useEffect(() => { setPage(1); }, [debouncedSearch, statusFilter]);
+
+  useEffect(() => {
+    if (ticket?.replies?.length) {
+      repliesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [ticket?.replies?.length]);
+
+  const tickets = data?.tickets ?? [];
+  const meta = data?.meta;
+  const stats = data?.stats;
+
+  const isClosed = ticket?.status === 'closed';
+
+  const handleAssign = async () => {
+    if (!selectedTicketId || !assignAdminId) return;
+    try {
+      await assignTicket.mutateAsync({ id: selectedTicketId, adminId: assignAdminId });
+      toast.success('Ticket assigned');
+      setAssignOpen(false);
+      setAssignAdminId('');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Assign failed');
     }
   };
 
-  const handleReply = () => {
-    if (!replyMessage.trim()) {
-      toast.error('Please enter a message');
-      return;
+  const handleUnassign = async () => {
+    if (!selectedTicketId) return;
+    try {
+      await assignTicket.mutateAsync({ id: selectedTicketId, adminId: null });
+      toast.success('Ticket unassigned');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Unassign failed');
     }
-    toast.success(`Reply sent for ticket ${detailTicket?.id}`);
-    setReplyOpen(false);
-    setReplyMessage('');
   };
 
-  const handleAssign = (assignee: string) => {
-    setTickets((prev) =>
-      prev.map((t) => (t.id === assignTicketId ? { ...t, assignee, updatedAt: new Date() } : t))
-    );
-    if (detailTicket?.id === assignTicketId) {
-      setDetailTicket((prev) => (prev ? { ...prev, assignee } : null));
+  const handleReply = async () => {
+    if (!selectedTicketId || !replyText.trim()) return;
+    try {
+      await replyTicket.mutateAsync({ id: selectedTicketId, content: replyText.trim() });
+      setReplyText('');
+      toast.success('Reply sent');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Reply failed');
     }
-    toast.success(`Ticket ${assignTicketId} assigned to ${assignee}`);
-    setAssignOpen(false);
   };
 
-  const stats = [
-    { label: 'Open', value: ticketStats.open, icon: Inbox, color: 'text-primary' },
-    { label: 'In Progress', value: ticketStats.inProgress, icon: Clock, color: 'text-amber-600' },
-    {
-      label: 'Resolved',
-      value: ticketStats.resolved,
-      icon: CheckCircle2,
-      color: 'text-emerald-600',
-    },
-    { label: 'Closed', value: ticketStats.closed, icon: XCircle, color: 'text-muted-foreground' },
+  const handleResolve = async () => {
+    if (!selectedTicketId) return;
+    try {
+      await resolveTicket.mutateAsync(selectedTicketId);
+      toast.success('Ticket resolved');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Resolve failed');
+    }
+  };
+
+  const handleClose = async () => {
+    if (!selectedTicketId) return;
+    try {
+      await closeTicket.mutateAsync(selectedTicketId);
+      toast.success('Ticket closed');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Close failed');
+    }
+  };
+
+  const statItems = [
+    { label: 'Open',        value: stats?.open        ?? '—', icon: Inbox,        color: 'text-amber-600' },
+    { label: 'In Progress', value: stats?.inProgress  ?? '—', icon: Clock,        color: 'text-primary' },
+    { label: 'Resolved',    value: stats?.resolved    ?? '—', icon: CheckCircle2, color: 'text-emerald-600' },
+    { label: 'Closed',      value: stats?.closed      ?? '—', icon: XCircle,      color: 'text-muted-foreground' },
   ];
 
   return (
     <div className='space-y-6'>
-      <PageHeader title='Support' subtitle='Manage support tickets' />
+      <PageHeader title='Support Tickets' subtitle='Manage customer support requests' />
 
-      <StatsGrid stats={stats} />
+      {/* Stats */}
+      <div className='grid grid-cols-2 gap-4 lg:grid-cols-4'>
+        {statItems.map((s) => (
+          <Card key={s.label}>
+            <CardContent className='flex items-center gap-3 p-5'>
+              <s.icon className={`h-6 w-6 ${s.color}`} />
+              <div>
+                <p className='text-2xl font-bold'>{s.value}</p>
+                <p className='text-xs text-muted-foreground'>{s.label}</p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
       <SearchFilterBar
-        searchValue={ticketSearch}
-        onSearchChange={(v) => {
-          setTicketSearch(v);
-          resetPage();
-        }}
-        searchPlaceholder='Search tickets by ID, subject, or requester...'
+        searchValue={search}
+        onSearchChange={(v) => setSearch(v)}
+        searchPlaceholder='Search by subject or requester...'
         filters={
-          <div className='flex gap-2 flex-wrap'>
-            {(['all', 'open', 'in_progress', 'resolved', 'closed'] as const).map((s) => (
-              <Button
-                key={s}
-                variant={ticketStatusFilter === s ? 'default' : 'outline'}
-                size='sm'
-                onClick={() => {
-                  setTicketStatusFilter(s);
-                  resetPage();
-                }}
-                className={ticketStatusFilter === s ? 'gradient-bg text-primary-foreground' : ''}
-              >
-                {s === 'all' ? 'All' : statusConfig[s].label}
-              </Button>
-            ))}
-          </div>
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => setStatusFilter(v as SupportStatusFilter)}
+          >
+            <SelectTrigger className='w-40'>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_FILTERS.map(({ value, label }) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         }
       />
 
-      {/* Table */}
       <Card>
         <CardContent className='p-0'>
           <div className='overflow-x-auto'>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>ID</TableHead>
+                  <TableHead className='font-mono text-xs'>Ticket #</TableHead>
                   <TableHead>Subject</TableHead>
                   <TableHead>Requester</TableHead>
+                  <TableHead>Business</TableHead>
                   <TableHead>Priority</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Assignee</TableHead>
-                  <TableHead>Updated</TableHead>
                   <TableHead className='text-right'>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {paginated.map((ticket) => (
-                  <TableRow key={ticket.id} className='border-b border-border transition-colors hover:bg-muted/50'>
-                    <TableCell className='text-sm font-mono text-muted-foreground'>
-                      {ticket.id}
-                    </TableCell>
-                    <TableCell>
-                      <p className='text-sm font-medium max-w-[200px] truncate'>{ticket.subject}</p>
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <p className='text-sm font-medium'>{ticket.requester}</p>
-                        <p className='text-xs text-muted-foreground'>{ticket.businessName}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                          priorityConfig[ticket.priority].className
-                        }`}
+                {isLoading ? (
+                  [...Array(PAGE_LIMIT)].map((_, i) => (
+                    <TableRow key={i}>
+                      {[...Array(8)].map((__, j) => (
+                        <TableCell key={j}>
+                          <div className='h-4 animate-pulse rounded bg-muted/60' />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : tickets.length === 0 ? (
+                  <EmptyState icon={LifeBuoy} message='No tickets match your filters.' colSpan={8} />
+                ) : (
+                  tickets.map((t: Ticket) => {
+                    const st = STATUS_CONFIG[t.status] ?? STATUS_CONFIG['open'];
+                    const pr = PRIORITY_CONFIG[t.priority] ?? PRIORITY_CONFIG['low'];
+                    return (
+                      <TableRow
+                        key={t.id}
+                        className={`border-b border-border transition-colors hover:bg-muted/50 ${isFetching ? 'opacity-60' : ''}`}
                       >
-                        {priorityConfig[ticket.priority].label}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant='outline' className={statusConfig[ticket.status].className}>
-                        {statusConfig[ticket.status].label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className='text-sm text-muted-foreground'>
-                      {ticket.assignee}
-                    </TableCell>
-                    <TableCell className='text-sm text-muted-foreground'>
-                      {formatRelativeTime(ticket.updatedAt)}
-                    </TableCell>
-                    <TableCell className='text-right'>
-                      <div className='flex items-center justify-end gap-1'>
-                        <Button
-                          variant='ghost'
-                          size='icon'
-                          className='h-8 w-8'
-                          onClick={() => setDetailTicket(ticket)}
-                          title='View details'
-                        >
-                          <Eye className='h-4 w-4' />
-                        </Button>
-                        <Button
-                          variant='ghost'
-                          size='icon'
-                          className='h-8 w-8'
-                          onClick={() => {
-                            setAssignTicketId(ticket.id);
-                            setAssignOpen(true);
-                          }}
-                          title='Assign'
-                        >
-                          <Users className='h-4 w-4' />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {paginated.length === 0 && (
-                  <EmptyState
-                    icon={LifeBuoy}
-                    message='No tickets match your filters.'
-                    colSpan={8}
-                  />
+                        <TableCell className='font-mono text-xs text-muted-foreground'>{t.ticketNumber}</TableCell>
+                        <TableCell className='max-w-[200px]'>
+                          <p className='truncate text-sm font-medium'>{t.subject}</p>
+                          <p className='text-xs text-muted-foreground capitalize'>{t.category}</p>
+                        </TableCell>
+                        <TableCell>
+                          <p className='text-sm font-medium'>{t.requesterName}</p>
+                          <p className='text-xs text-muted-foreground'>{t.requesterEmail}</p>
+                        </TableCell>
+                        <TableCell className='text-sm'>{t.businessName}</TableCell>
+                        <TableCell>
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${pr.className}`}>
+                            {pr.label}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant='outline' className={st.className}>{st.label}</Badge>
+                        </TableCell>
+                        <TableCell className='text-sm text-muted-foreground'>
+                          {t.assigneeName ?? <span className='italic text-xs'>Unassigned</span>}
+                        </TableCell>
+                        <TableCell className='text-right'>
+                          <Button
+                            variant='ghost'
+                            size='icon'
+                            className='h-8 w-8'
+                            onClick={() => setSelectedTicketId(t.id)}
+                          >
+                            <Eye className='h-4 w-4' />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
           </div>
-          <DataTablePagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            startIndex={startIndex}
-            endIndex={endIndex}
-            totalItems={totalItems}
-            onPageChange={setCurrentPage}
-          />
+          {meta && (
+            <DataTablePagination
+              currentPage={meta.page}
+              totalPages={meta.totalPages}
+              startIndex={(meta.page - 1) * meta.limit + 1}
+              endIndex={Math.min(meta.page * meta.limit, meta.total)}
+              totalItems={meta.total}
+              onPageChange={setPage}
+            />
+          )}
         </CardContent>
       </Card>
 
       {/* Ticket Detail Dialog */}
-      <Dialog open={!!detailTicket} onOpenChange={(open) => !open && setDetailTicket(null)}>
-        <DialogContent className='sm:max-w-lg' onPointerDownOutside={(e) => e.preventDefault()}>
+      <Dialog open={!!selectedTicketId} onOpenChange={(open) => !open && setSelectedTicketId(null)}>
+        <DialogContent className='sm:max-w-2xl max-h-[90vh] flex flex-col overflow-hidden'>
           <DialogHeader>
             <DialogTitle className='flex items-center gap-2'>
-              <span className='font-mono text-muted-foreground'>{detailTicket?.id}</span>
-              {detailTicket && (
-                <Badge variant='outline' className={statusConfig[detailTicket.status].className}>
-                  {statusConfig[detailTicket.status].label}
-                </Badge>
-              )}
+              <span className='font-mono text-sm text-muted-foreground'>{ticket?.ticketNumber}</span>
+              <span>{ticket?.subject}</span>
             </DialogTitle>
-            <DialogDescription>{detailTicket?.subject}</DialogDescription>
-          </DialogHeader>
-          {detailTicket && (
-            <div className='space-y-4'>
-              <div className='grid grid-cols-2 gap-4'>
-                <div>
-                  <Label className='text-xs text-muted-foreground'>Requester</Label>
-                  <p className='text-sm font-medium'>{detailTicket.requester}</p>
-                  <p className='text-xs text-muted-foreground'>{detailTicket.requesterEmail}</p>
-                </div>
-                <div>
-                  <Label className='text-xs text-muted-foreground'>Business</Label>
-                  <p className='text-sm font-medium'>{detailTicket.businessName}</p>
-                </div>
-                <div>
-                  <Label className='text-xs text-muted-foreground'>Priority</Label>
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                      priorityConfig[detailTicket.priority].className
-                    }`}
-                  >
-                    {priorityConfig[detailTicket.priority].label}
-                  </span>
-                </div>
-                <div>
-                  <Label className='text-xs text-muted-foreground'>Assignee</Label>
-                  <p className='text-sm font-medium'>{detailTicket.assignee}</p>
-                </div>
-                <div>
-                  <Label className='text-xs text-muted-foreground'>Category</Label>
-                  <p className='text-sm font-medium'>{detailTicket.category}</p>
-                </div>
-                <div>
-                  <Label className='text-xs text-muted-foreground'>Created</Label>
-                  <p className='text-sm font-medium'>
-                    {formatRelativeTime(detailTicket.createdAt)}
-                  </p>
-                </div>
-              </div>
-              <div>
-                <Label className='text-xs text-muted-foreground'>Description</Label>
-                <p className='mt-1 text-sm rounded-lg bg-muted p-3'>{detailTicket.description}</p>
-              </div>
-            </div>
-          )}
-          <DialogFooter className='gap-2 flex-wrap'>
-            <Button
-              variant='outline'
-              size='sm'
-              onClick={() => {
-                setAssignTicketId(detailTicket?.id || '');
-                setAssignOpen(true);
-              }}
-              className='gap-1'
-            >
-              <Users className='h-3.5 w-3.5' /> Assign
-            </Button>
-            <Button
-              variant='outline'
-              size='sm'
-              onClick={() => {
-                setReplyMessage('');
-                setReplyOpen(true);
-              }}
-              className='gap-1'
-            >
-              <MessageSquare className='h-3.5 w-3.5' /> Reply
-            </Button>
-            {detailTicket &&
-              detailTicket.status !== 'resolved' &&
-              detailTicket.status !== 'closed' && (
-                <Button
-                  size='sm'
-                  onClick={() => updateTicketStatus(detailTicket.id, 'resolved')}
-                  className='gradient-bg text-primary-foreground gap-1'
-                >
-                  <CheckCircle2 className='h-3.5 w-3.5' /> Resolve
-                </Button>
+            <DialogDescription className='flex items-center gap-2 flex-wrap'>
+              {ticket && (
+                <>
+                  <Badge variant='outline' className={STATUS_CONFIG[ticket.status]?.className}>
+                    {STATUS_CONFIG[ticket.status]?.label}
+                  </Badge>
+                  <span className='text-xs capitalize'>{ticket.priority} priority</span>
+                  <span className='text-xs'>·</span>
+                  <span className='text-xs capitalize'>{ticket.category}</span>
+                  <span className='text-xs'>·</span>
+                  <span className='text-xs'>{ticket.businessName}</span>
+                </>
               )}
-            {detailTicket && detailTicket.status === 'resolved' && (
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className='flex-1 overflow-y-auto space-y-4 py-2'>
+            {ticketLoading ? (
+              <div className='space-y-3'>
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className='h-16 animate-pulse rounded-lg bg-muted/40' />
+                ))}
+              </div>
+            ) : ticket ? (
+              <>
+                {/* Info row */}
+                <div className='grid grid-cols-2 gap-3 rounded-lg border border-border p-3 text-sm'>
+                  <div>
+                    <p className='text-xs text-muted-foreground'>Requester</p>
+                    <p className='font-medium'>{ticket.requesterName}</p>
+                    <p className='text-xs text-muted-foreground'>{ticket.requesterEmail}</p>
+                  </div>
+                  <div>
+                    <p className='text-xs text-muted-foreground'>Assignee</p>
+                    <p className='font-medium'>{ticket.assigneeName ?? 'Unassigned'}</p>
+                  </div>
+                  <div className='col-span-2'>
+                    <p className='text-xs text-muted-foreground'>Description</p>
+                    <p className='mt-0.5 text-sm whitespace-pre-wrap'>{ticket.description}</p>
+                  </div>
+                  <div>
+                    <p className='text-xs text-muted-foreground'>Opened</p>
+                    <p>{formatRelativeTime(new Date(ticket.createdAt))}</p>
+                  </div>
+                </div>
+
+                {/* Replies */}
+                <div className='space-y-2'>
+                  <p className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
+                    Replies ({ticket.replies?.length ?? 0})
+                  </p>
+                  {(ticket.replies ?? []).length === 0 ? (
+                    <p className='text-sm text-muted-foreground py-2'>No replies yet.</p>
+                  ) : (
+                    (ticket.replies ?? []).map((reply, i) => (
+                      <div
+                        key={i}
+                        className={`rounded-lg p-3 text-sm ${
+                          reply.authorType === 'admin'
+                            ? 'bg-primary/5 border border-primary/20'
+                            : 'bg-muted/50 border border-border'
+                        }`}
+                      >
+                        <div className='flex items-center justify-between mb-1'>
+                          <span className={`text-xs font-medium ${reply.authorType === 'admin' ? 'text-primary' : 'text-foreground'}`}>
+                            {reply.authorName}
+                            {reply.authorType === 'admin' && <span className='ml-1 opacity-60'>(Admin)</span>}
+                          </span>
+                          <span className='text-xs text-muted-foreground'>
+                            {formatRelativeTime(new Date(reply.createdAt))}
+                          </span>
+                        </div>
+                        <p className='whitespace-pre-wrap text-foreground'>{reply.content}</p>
+                      </div>
+                    ))
+                  )}
+                  <div ref={repliesEndRef} />
+                </div>
+
+                {/* Reply form */}
+                {!isClosed && (
+                  <div className='space-y-2'>
+                    <Label className='text-xs font-semibold uppercase tracking-wide text-muted-foreground'>
+                      <MessageSquare className='inline h-3 w-3 mr-1' />
+                      Add Reply
+                    </Label>
+                    <Textarea
+                      placeholder='Type your reply...'
+                      value={replyText}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReplyText(e.target.value)}
+                      rows={3}
+                      className='resize-none'
+                    />
+                    <Button
+                      size='sm'
+                      onClick={() => void handleReply()}
+                      disabled={!replyText.trim() || replyTicket.isPending}
+                      className='gap-1'
+                    >
+                      {replyTicket.isPending && <Loader2 className='h-3.5 w-3.5 animate-spin' />}
+                      Send Reply
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : null}
+          </div>
+
+          <DialogFooter className='flex-col sm:flex-row gap-2 border-t border-border pt-3 mt-0'>
+            {/* Assign */}
+            {!isClosed && (
               <Button
-                size='sm'
                 variant='outline'
-                onClick={() => updateTicketStatus(detailTicket.id, 'closed')}
+                size='sm'
+                onClick={() => setAssignOpen(true)}
                 className='gap-1'
               >
-                <XCircle className='h-3.5 w-3.5' /> Close
+                <UserCheck className='h-3.5 w-3.5' />
+                {ticket?.assigneeName ? 'Reassign' : 'Assign'}
+              </Button>
+            )}
+            {ticket?.assigneeName && !isClosed && (
+              <Button
+                variant='ghost'
+                size='sm'
+                onClick={() => void handleUnassign()}
+                disabled={assignTicket.isPending}
+                className='text-muted-foreground text-xs'
+              >
+                Unassign
+              </Button>
+            )}
+            <div className='flex-1' />
+            {ticket?.status !== 'resolved' && ticket?.status !== 'closed' && (
+              <Button
+                variant='outline'
+                size='sm'
+                onClick={() => void handleResolve()}
+                disabled={resolveTicket.isPending}
+                className='gap-1 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10'
+              >
+                {resolveTicket.isPending
+                  ? <Loader2 className='h-3.5 w-3.5 animate-spin' />
+                  : <CheckCircle2 className='h-3.5 w-3.5' />}
+                Resolve
+              </Button>
+            )}
+            {ticket?.status !== 'closed' && (
+              <Button
+                variant='destructive'
+                size='sm'
+                onClick={() => void handleClose()}
+                disabled={closeTicket.isPending}
+                className='gap-1'
+              >
+                {closeTicket.isPending
+                  ? <Loader2 className='h-3.5 w-3.5 animate-spin' />
+                  : <XCircle className='h-3.5 w-3.5' />}
+                Close Ticket
               </Button>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Reply Dialog */}
-      <Dialog open={replyOpen} onOpenChange={setReplyOpen}>
-        <DialogContent className='sm:max-w-md' onPointerDownOutside={(e) => e.preventDefault()}>
-          <DialogHeader>
-            <DialogTitle>Reply to {detailTicket?.id}</DialogTitle>
-            <DialogDescription>Send a response to {detailTicket?.requester}</DialogDescription>
-          </DialogHeader>
-          <div className='space-y-2'>
-            <Label htmlFor='reply-msg'>Message</Label>
-            <textarea
-              id='reply-msg'
-              value={replyMessage}
-              onChange={(e) => setReplyMessage(e.target.value)}
-              rows={5}
-              placeholder='Type your reply...'
-              className='flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
-            />
-          </div>
-          <DialogFooter>
-            <Button variant='outline' onClick={() => setReplyOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleReply} className='gradient-bg text-primary-foreground'>
-              Send Reply
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Assign Dialog */}
+      {/* Assign Admin Dialog */}
       <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
-        <DialogContent className='sm:max-w-xs' onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogContent className='sm:max-w-sm'>
           <DialogHeader>
             <DialogTitle>Assign Ticket</DialogTitle>
-            <DialogDescription>Select a team member to assign {assignTicketId}</DialogDescription>
+            <DialogDescription>Select an admin to handle this ticket.</DialogDescription>
           </DialogHeader>
-          <div className='space-y-2'>
-            {assignees.map((a) => (
-              <Button
-                key={a}
-                variant='outline'
-                className='w-full justify-start'
-                onClick={() => handleAssign(a)}
-              >
-                {a}
-              </Button>
-            ))}
-          </div>
+          <Select value={assignAdminId} onValueChange={setAssignAdminId}>
+            <SelectTrigger className='w-full'>
+              <SelectValue placeholder='Select admin...' />
+            </SelectTrigger>
+            <SelectContent>
+              {admins.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.firstName} {a.lastName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant='outline' onClick={() => setAssignOpen(false)}>Cancel</Button>
+            <Button onClick={() => void handleAssign()} disabled={!assignAdminId || assignTicket.isPending}>
+              {assignTicket.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              Assign
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
