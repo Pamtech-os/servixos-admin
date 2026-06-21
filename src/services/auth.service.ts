@@ -14,6 +14,6 @@ export const authService = {
       newPassword,
     }),
 
-  logout: (refreshToken: string) =>
-    apiClient.post<void>('/auth/logout', { refreshToken }),
+  logout: () =>
+    apiClient.post<void>('/auth/logout', {}),
 };
