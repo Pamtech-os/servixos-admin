@@ -9,7 +9,7 @@ import {
   type FC,
   type PropsWithChildren,
 } from 'react';
-import { tokenStore, restoreSession } from '@/lib/api-client';
+import { restoreSession } from '@/lib/api-client';
 import { storage } from '@/lib/storage';
 import { authService } from '@/services/auth.service';
 import { isOtpRequired, type Admin, type LoginResult, type LoginSuccessData } from '@/types/auth';
@@ -31,8 +31,6 @@ interface AuthContextValue extends AuthState {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 function applySession(data: LoginSuccessData, setState: (s: AuthState) => void) {
-  tokenStore.set(data.accessToken);
-  storage.setRefreshToken(data.refreshToken);
   storage.setAdmin(data.admin);
   setState({
     admin: data.admin,
@@ -43,32 +41,26 @@ function applySession(data: LoginSuccessData, setState: (s: AuthState) => void) 
 }
 
 const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
-  const [state, setState] = useState<AuthState>(() => ({
+  const [state, setState] = useState<AuthState>({
     admin: null,
     mustChangePassword: false,
     isAuthenticated: false,
-    isLoading: !!storage.getRefreshToken(),
-  }));
+    isLoading: true,
+  });
 
   useEffect(() => {
     let cancelled = false;
-
-    const rt = storage.getRefreshToken();
-    if (!rt) {
-      return;
-    }
-
     const cachedAdmin = storage.getAdmin<Admin>();
 
     // restoreSession() is deduplicated at module level — safe against StrictMode double-effect
     restoreSession()
-      .then((accessToken) => {
+      .then((ok) => {
         if (cancelled) return;
-        if (accessToken) {
+        if (ok) {
           setState({
             admin: cachedAdmin,
             mustChangePassword: false,
-            isAuthenticated: !!cachedAdmin,
+            isAuthenticated: true,
             isLoading: false,
           });
         } else {
@@ -79,7 +71,6 @@ const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
       .catch(() => {
         if (cancelled) return;
         storage.clear();
-        tokenStore.clear();
         setState({ admin: null, mustChangePassword: false, isAuthenticated: false, isLoading: false });
       });
 
@@ -107,11 +98,7 @@ const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
   }, []);
 
   const logout = useCallback(async () => {
-    const rt = storage.getRefreshToken();
-    if (rt) {
-      try { await authService.logout(rt); } catch { /* best-effort */ }
-    }
-    tokenStore.clear();
+    try { await authService.logout(); } catch { /* best-effort */ }
     storage.clear();
     setState({ admin: null, mustChangePassword: false, isAuthenticated: false, isLoading: false });
   }, []);
