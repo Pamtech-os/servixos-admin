@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api-client';
-import type { UsersPage, ApiUser, UsersQueryParams, InviteUserPayload } from '@/types/users';
+import type { UsersPage, ApiUser, UsersQueryParams } from '@/types/users';
 
 function buildQs(params: Record<string, string | number | undefined>): string {
   const q = new URLSearchParams();
@@ -42,9 +42,6 @@ export const usersService = {
       userIds,
       ...(suspend !== undefined && { suspend }),
     }),
-
-  invite: (payload: InviteUserPayload) =>
-    apiClient.post<void>('/users/invite', payload),
 
   sendEmailBulk: (userIds: string[], subject: string, message: string) =>
     apiClient.post<{ sent: number }>('/users/send-email', { userIds, subject, message }),

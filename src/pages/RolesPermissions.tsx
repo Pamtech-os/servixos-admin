@@ -173,7 +173,11 @@ const RolesPermissions: FC = () => {
       setInviteOpen(false);
       setInviteFirst(''); setInviteLast(''); setInviteEmail(''); setInviteRoleId('');
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Invite failed');
+      if (err instanceof ApiError && err.statusCode === 403) {
+        toast.error('Only the super admin can invite new admins');
+      } else {
+        toast.error(err instanceof ApiError ? err.message : 'Invite failed');
+      }
     }
   };
 

@@ -14,7 +14,6 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { formatRelativeTime } from '@/lib/format';
@@ -23,7 +22,7 @@ import { useDebounce } from '@/hooks/useDebounce';
 import { useSelection } from '@/hooks/useSelection';
 import {
   useUsers, useToggleSuspendUser, useBulkToggleSuspendUsers,
-  useInviteUser, useResetUserPassword, useSendUserEmail,
+  useResetUserPassword, useSendUserEmail,
 } from '@/hooks/useUsers';
 import {
   PageHeader, StatsGrid, DataTablePagination, SearchFilterBar,
@@ -75,12 +74,6 @@ const Users: FC = () => {
   const [emailOpen, setEmailOpen] = useState(false);
   const [emailTargets, setEmailTargets] = useState<{ id: string; name: string }[]>([]);
 
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteName, setInviteName] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'owner' | 'employee'>('employee');
-  const [inviteBusiness, setInviteBusiness] = useState('');
-
   const debouncedSearch = useDebounce(search, 350);
 
   const { data, isLoading, isFetching } = useUsers({
@@ -89,7 +82,6 @@ const Users: FC = () => {
 
   const toggleSuspend = useToggleSuspendUser();
   const bulkToggleSuspend = useBulkToggleSuspendUsers();
-  const inviteUser = useInviteUser();
   const resetPassword = useResetUserPassword();
   const sendEmail = useSendUserEmail();
 
@@ -151,29 +143,6 @@ const Users: FC = () => {
     }
   };
 
-  const handleInvite = async () => {
-    if (!inviteName.trim() || !inviteEmail.trim()) {
-      toast.error('Name and email are required');
-      return;
-    }
-    try {
-      await inviteUser.mutateAsync({
-        fullName: inviteName,
-        email: inviteEmail,
-        role: inviteRole,
-        businessName: inviteBusiness.trim() || undefined,
-      });
-      toast.success(`Invitation sent to ${inviteEmail}`);
-      setInviteOpen(false);
-      setInviteName('');
-      setInviteEmail('');
-      setInviteRole('employee');
-      setInviteBusiness('');
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Invite failed');
-    }
-  };
-
   const selectedUsers = users.filter((u) => selected.has(u.id));
 
   const statItems = [
@@ -189,14 +158,6 @@ const Users: FC = () => {
       <PageHeader
         title='Users'
         subtitle='Manage business owners and their team members'
-        action={
-          <Button
-            onClick={() => setInviteOpen(true)}
-            className='gradient-bg text-primary-foreground gap-1 w-full sm:w-auto'
-          >
-            <UserPlus className='h-4 w-4' /> Invite User
-          </Button>
-        }
       />
 
       <StatsGrid stats={statItems} className='grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5' />
@@ -465,56 +426,6 @@ const Users: FC = () => {
         onSend={handleSendEmail}
       />
 
-      {/* Invite Dialog */}
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent className='sm:max-w-md'>
-          <DialogHeader>
-            <DialogTitle>Invite User</DialogTitle>
-            <DialogDescription>Send an invitation with a temporary password</DialogDescription>
-          </DialogHeader>
-          <div className='space-y-4'>
-            <div className='space-y-2'>
-              <Label htmlFor='invite-name'>Full Name</Label>
-              <Input id='invite-name' placeholder='Jane Doe' value={inviteName} onChange={(e) => setInviteName(e.target.value)} />
-            </div>
-            <div className='space-y-2'>
-              <Label htmlFor='invite-email'>Email</Label>
-              <Input id='invite-email' type='email' placeholder='jane@company.com' value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
-            </div>
-            <div className='space-y-2'>
-              <Label htmlFor='invite-business'>Business Name <span className='text-muted-foreground'>(optional)</span></Label>
-              <Input id='invite-business' placeholder='Existing business name...' value={inviteBusiness} onChange={(e) => setInviteBusiness(e.target.value)} />
-            </div>
-            <div className='space-y-2'>
-              <Label>Role</Label>
-              <div className='flex gap-2'>
-                {(['owner', 'employee'] as const).map((r) => (
-                  <Button
-                    key={r}
-                    variant={inviteRole === r ? 'default' : 'outline'}
-                    size='sm'
-                    onClick={() => setInviteRole(r)}
-                    className={inviteRole === r ? 'gradient-bg text-primary-foreground' : ''}
-                  >
-                    {ROLE_CONFIG[r].label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant='outline' onClick={() => setInviteOpen(false)} disabled={inviteUser.isPending}>Cancel</Button>
-            <Button
-              onClick={() => void handleInvite()}
-              className='gradient-bg text-primary-foreground gap-1'
-              disabled={inviteUser.isPending}
-            >
-              {inviteUser.isPending ? <ModernSpinner size='sm' color='primary-foreground' /> : null}
-              Send Invitation
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
