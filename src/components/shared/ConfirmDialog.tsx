@@ -9,6 +9,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import ModernSpinner from '@/components/ModernSpinner';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -19,6 +20,7 @@ interface ConfirmDialogProps {
   variant?: 'destructive' | 'default';
   onConfirm: () => void;
   icon?: ReactNode;
+  loading?: boolean;
 }
 
 const ConfirmDialog: FC<ConfirmDialogProps> = ({
@@ -30,8 +32,9 @@ const ConfirmDialog: FC<ConfirmDialogProps> = ({
   variant = 'destructive',
   onConfirm,
   icon,
-}: ConfirmDialogProps) => (
-  <Dialog open={open} onOpenChange={onOpenChange}>
+  loading = false,
+}) => (
+  <Dialog open={open} onOpenChange={(v) => !loading && onOpenChange(v)}>
     <DialogContent className='sm:max-w-sm'>
       <DialogHeader>
         <DialogTitle className='flex items-center gap-2'>
@@ -41,10 +44,11 @@ const ConfirmDialog: FC<ConfirmDialogProps> = ({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <DialogFooter className='gap-2'>
-        <Button variant='outline' onClick={() => onOpenChange(false)}>
+        <Button variant='outline' onClick={() => onOpenChange(false)} disabled={loading}>
           Cancel
         </Button>
-        <Button variant={variant} onClick={onConfirm}>
+        <Button variant={variant} onClick={onConfirm} disabled={loading} className='gap-1.5'>
+          {loading && <ModernSpinner size='sm' color={variant === 'destructive' ? 'primary-foreground' : 'primary'} />}
           {confirmLabel}
         </Button>
       </DialogFooter>

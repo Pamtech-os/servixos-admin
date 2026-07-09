@@ -1,6 +1,6 @@
-import { useMemo, type FC } from 'react';
+import { type FC } from 'react';
 import { motion } from 'framer-motion';
-import { DollarSign, Users } from 'lucide-react';
+import { DollarSign, Users, TrendingUp, TrendingDown, UserPlus } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -12,6 +12,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  AreaChart,
+  Area,
   BarChart,
   Bar,
   XAxis,
@@ -19,231 +21,153 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
   Cell,
-  Legend,
 } from 'recharts';
+import { PageHeader, StatsGrid } from '@/components/shared';
+import { useSubscriptions } from '@/hooks/useSubscriptions';
+import { formatRelativeTime } from '@/lib/format';
+import type { PlanChangeType } from '@/types/subscriptions';
 
-const now = new Date();
-const currentMonth = now.getMonth();
-const currentYear = now.getFullYear();
-
-function getMonthName(offset: number): string {
-  const d = new Date(currentYear, currentMonth - offset, 1);
-  return d.toLocaleString('default', { month: 'short' });
-}
-
-const mrrData = [
-  { month: getMonthName(5), mrr: 38200 },
-  { month: getMonthName(4), mrr: 42100 },
-  { month: getMonthName(3), mrr: 45800 },
-  { month: getMonthName(2), mrr: 49300 },
-  { month: getMonthName(1), mrr: 53600 },
-  { month: getMonthName(0), mrr: 58400 },
-];
-
-const planDistribution = [
-  { name: 'Starter', value: 1420, percentage: '50%' },
-  { name: 'Pro', value: 1180, percentage: '41%' },
-  { name: 'Growth', value: 247, percentage: '9%' },
-];
-
-const PLAN_COLORS = ['hsl(217, 91%, 60%)', 'hsl(270, 70%, 60%)', 'hsl(174, 72%, 50%)'];
-
-interface PlanChange {
-  id: string;
-  business: string;
-  change: string;
-  type: 'upgrade' | 'conversion' | 'churn';
-  date: string;
-}
-
-const recentPlanChanges: PlanChange[] = [
-  {
-    id: 'pc1',
-    business: "Mike's Plumbing",
-    change: 'Starter → Pro',
-    type: 'upgrade',
-    date: 'Today',
-  },
-  {
-    id: 'pc2',
-    business: 'Green Lawn Care',
-    change: 'Trial → Starter',
-    type: 'conversion',
-    date: 'Yesterday',
-  },
-  {
-    id: 'pc3',
-    business: 'Sparkle Maids',
-    change: 'Pro → Cancelled',
-    type: 'churn',
-    date: '2 days ago',
-  },
-  {
-    id: 'pc4',
-    business: 'Elite Electric',
-    change: 'Starter → Pro',
-    type: 'upgrade',
-    date: '3 days ago',
-  },
-  {
-    id: 'pc5',
-    business: 'Tech Repair Hub',
-    change: 'Trial → Starter',
-    type: 'conversion',
-    date: '4 days ago',
-  },
-];
-
-const typeConfig: Record<PlanChange['type'], { label: string; className: string }> = {
-  upgrade: {
-    label: 'upgrade',
-    className: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-  },
-  conversion: { label: 'conversion', className: 'bg-primary/10 text-primary border-primary/20' },
-  churn: { label: 'churn', className: 'bg-destructive/10 text-destructive border-destructive/20' },
+const PLAN_CHANGE_CONFIG: Record<PlanChangeType, { label: string; className: string }> = {
+  upgrade:    { label: 'Upgrade',    className: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' },
+  downgrade:  { label: 'Downgrade',  className: 'bg-amber-500/10 text-amber-600 border-amber-500/20' },
+  conversion: { label: 'Conversion', className: 'bg-primary/10 text-primary border-primary/20' },
+  churn:      { label: 'Churn',      className: 'bg-destructive/10 text-destructive border-destructive/20' },
 };
 
-interface CustomTooltipContentProps {
-  active?: boolean;
-  payload?: Array<{ value: number }>;
-  label?: string;
-}
-
-const CustomTooltipContent: FC<CustomTooltipContentProps> = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className='rounded-lg border border-border bg-card px-3 py-2 shadow-md'>
-      <p className='text-xs text-muted-foreground'>{label}</p>
-      <p className='text-sm font-semibold'>${payload[0].value.toLocaleString()}</p>
-    </div>
-  );
+const PLAN_COLORS: Record<string, string> = {
+  starter: 'hsl(217, 91%, 60%)',
+  growth:  'hsl(174, 72%, 50%)',
+  pro:     'hsl(270, 70%, 60%)',
 };
 
 const Subscriptions: FC = () => {
-  const statCards = useMemo(
-    () => [
-      { label: 'Monthly Recurring Revenue', value: '$58,400', change: '+8.9%', icon: DollarSign },
-      { label: 'Paid Subscribers', value: '2,847', change: '+124 this month', icon: Users },
-    ],
-    []
-  );
+  const { data, isLoading } = useSubscriptions();
+
+  const stats = data?.stats;
+
+  const mrrGrowthUp = (stats?.mrrGrowthPercent ?? 0) >= 0;
+  const mrrGrowthLabel = stats
+    ? `${mrrGrowthUp ? '+' : ''}${stats.mrrGrowthPercent.toFixed(1)}% MoM`
+    : '—';
+
+  const statItems = [
+    { label: 'MRR',            value: stats ? `$${stats.mrr.toLocaleString()}`                   : '—', icon: DollarSign, color: 'text-emerald-600' },
+    { label: 'MRR Growth',     value: stats ? mrrGrowthLabel                                      : '—', icon: mrrGrowthUp ? TrendingUp : TrendingDown, color: mrrGrowthUp ? 'text-emerald-600' : 'text-destructive' },
+    { label: 'Paid Subscribers', value: stats ? stats.paidSubscribers.toLocaleString()            : '—', icon: Users,      color: 'text-primary' },
+    { label: 'New This Month', value: stats ? stats.newPaidSubscribersThisMonth.toLocaleString()  : '—', icon: UserPlus,   color: 'text-secondary' },
+  ];
+
+  const mrrChartData = (data?.mrrHistory ?? []).map((p) => ({ month: p.label, value: p.value }));
+  const planChartData = (data?.planDistribution ?? []).map((p) => ({
+    plan: p.plan.charAt(0).toUpperCase() + p.plan.slice(1),
+    count: p.count,
+    percentage: p.percentage,
+    fill: PLAN_COLORS[p.plan.toLowerCase()] ?? 'hsl(217, 91%, 60%)',
+  }));
 
   return (
     <div className='space-y-6'>
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <h1 className='text-2xl font-bold'>Subscriptions</h1>
-        <p className='text-muted-foreground'>Revenue, plans, and subscriber analytics</p>
-      </motion.div>
+      <PageHeader title='Subscriptions' subtitle='Revenue, plans, and subscriber analytics' />
 
-      {/* Stat Cards */}
-      <div className='grid gap-4 sm:grid-cols-2'>
-        {statCards.map((card, i) => (
-          <motion.div
-            key={card.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 + i * 0.05, duration: 0.4 }}
-          >
-            <Card className='card-shadow'>
-              <CardContent className='flex items-center gap-4 p-6'>
-                <div className='flex h-12 w-12 items-center justify-center rounded-xl gradient-bg text-primary-foreground'>
-                  <card.icon className='h-6 w-6' />
-                </div>
-                <div>
-                  <p className='text-sm text-muted-foreground'>{card.label}</p>
-                  <p className='text-2xl font-bold'>{card.value}</p>
-                  <p className='text-xs text-emerald-600'>{card.change}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
+      <StatsGrid stats={statItems} />
 
-      {/* Charts Row */}
       <div className='grid gap-6 lg:grid-cols-2'>
-        {/* MRR Bar Chart */}
+        {/* MRR History */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.4 }}
         >
-          <Card className='card-shadow'>
+          <Card>
             <CardHeader>
               <CardTitle className='text-base'>Monthly Recurring Revenue</CardTitle>
-              <CardDescription>Last 6 months</CardDescription>
+              <CardDescription>MRR trend over time</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className='h-[280px]'>
-                <ResponsiveContainer width='100%' height='100%'>
-                  <BarChart data={mrrData}>
-                    <CartesianGrid strokeDasharray='3 3' stroke='hsl(var(--border))' />
-                    <XAxis
-                      dataKey='month'
-                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
-                      tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                    />
-                    <Tooltip content={<CustomTooltipContent />} />
-                    <Bar dataKey='mrr' fill='hsl(217, 91%, 60%)' radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div className='h-[260px]'>
+                {isLoading ? (
+                  <div className='h-full animate-pulse rounded-lg bg-muted/40' />
+                ) : (
+                  <ResponsiveContainer width='100%' height='100%'>
+                    <AreaChart data={mrrChartData}>
+                      <defs>
+                        <linearGradient id='mrrGradient' x1='0' y1='0' x2='0' y2='1'>
+                          <stop offset='5%' stopColor='hsl(217, 91%, 60%)' stopOpacity={0.3} />
+                          <stop offset='95%' stopColor='hsl(217, 91%, 60%)' stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray='3 3' stroke='hsl(var(--border))' opacity={0.4} />
+                      <XAxis dataKey='month' tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
+                      <YAxis
+                        tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }}
+                        tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                        }}
+                        formatter={(v) => [`$${Number(v ?? 0).toLocaleString()}`, 'MRR']}
+                      />
+                      <Area
+                        type='monotone'
+                        dataKey='value'
+                        stroke='hsl(217, 91%, 60%)'
+                        fill='url(#mrrGradient)'
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </CardContent>
           </Card>
         </motion.div>
 
-        {/* Plan Distribution Pie */}
+        {/* Plan Distribution */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25, duration: 0.4 }}
         >
-          <Card className='card-shadow'>
+          <Card>
             <CardHeader>
               <CardTitle className='text-base'>Plan Distribution</CardTitle>
-              <CardDescription>Active subscriber breakdown</CardDescription>
+              <CardDescription>Active subscribers by plan</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className='h-[280px]'>
-                <ResponsiveContainer width='100%' height='100%'>
-                  <PieChart>
-                    <Pie
-                      data={planDistribution}
-                      cx='50%'
-                      cy='50%'
-                      innerRadius={60}
-                      outerRadius={100}
-                      paddingAngle={4}
-                      dataKey='value'
-                      label={({ name, percent }) =>
-                        `${name} (${Math.round((percent ?? 0) * 100)}%)`
-                      }
-                    >
-                      {planDistribution.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={PLAN_COLORS[index]} />
-                      ))}
-                    </Pie>
-                    <Legend />
-                    <Tooltip
-                      formatter={(value) => Number(value ?? 0).toLocaleString()}
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: '8px',
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className='h-[260px]'>
+                {isLoading ? (
+                  <div className='h-full animate-pulse rounded-lg bg-muted/40' />
+                ) : (
+                  <ResponsiveContainer width='100%' height='100%'>
+                    <BarChart data={planChartData} layout='vertical' margin={{ left: 16 }}>
+                      <CartesianGrid strokeDasharray='3 3' stroke='hsl(var(--border))' opacity={0.4} horizontal={false} />
+                      <XAxis type='number' tick={{ fontSize: 12, fill: 'hsl(var(--muted-foreground))' }} />
+                      <YAxis type='category' dataKey='plan' tick={{ fontSize: 13, fill: 'hsl(var(--foreground))' }} width={60} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--card))',
+                          border: '1px solid hsl(var(--border))',
+                          borderRadius: '8px',
+                          fontSize: '12px',
+                        }}
+                        formatter={(v, _name, props) => [
+                          `${Number(v)} (${props.payload.percentage}%)`,
+                          'Subscribers',
+                        ]}
+                      />
+                      <Bar dataKey='count' radius={[0, 6, 6, 0]}>
+                        {planChartData.map((entry, i) => (
+                          <Cell key={i} fill={entry.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -256,34 +180,57 @@ const Subscriptions: FC = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3, duration: 0.4 }}
       >
-        <Card className='card-shadow'>
+        <Card>
           <CardHeader>
             <CardTitle className='text-base'>Recent Plan Changes</CardTitle>
-            <CardDescription>Upgrades, conversions, and cancellations</CardDescription>
+            <CardDescription>Upgrades, conversions, downgrades, and churn</CardDescription>
           </CardHeader>
           <CardContent className='p-0'>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Business</TableHead>
-                  <TableHead>Change</TableHead>
+                  <TableHead>From</TableHead>
+                  <TableHead>To</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead className='text-right'>Date</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {recentPlanChanges.map((pc) => (
-                  <TableRow key={pc.id} className='border-b border-border transition-colors hover:bg-muted/50'>
-                    <TableCell className='font-medium'>{pc.business}</TableCell>
-                    <TableCell className='text-muted-foreground'>{pc.change}</TableCell>
-                    <TableCell>
-                      <Badge variant='outline' className={typeConfig[pc.type].className}>
-                        {typeConfig[pc.type].label}
-                      </Badge>
+                {isLoading ? (
+                  [...Array(5)].map((_, i) => (
+                    <TableRow key={i}>
+                      {[...Array(5)].map((__, j) => (
+                        <TableCell key={j}>
+                          <div className='h-4 animate-pulse rounded bg-muted/60' />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : (data?.recentPlanChanges ?? []).length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className='py-8 text-center text-muted-foreground'>
+                      No recent plan changes.
                     </TableCell>
-                    <TableCell className='text-right text-muted-foreground'>{pc.date}</TableCell>
                   </TableRow>
-                ))}
+                ) : (
+                  (data?.recentPlanChanges ?? []).map((pc, i) => {
+                    const cfg = PLAN_CHANGE_CONFIG[pc.type];
+                    return (
+                      <TableRow key={i} className='border-b border-border transition-colors hover:bg-muted/50'>
+                        <TableCell className='font-medium'>{pc.businessName}</TableCell>
+                        <TableCell className='capitalize text-muted-foreground'>{pc.fromPlan}</TableCell>
+                        <TableCell className='capitalize'>{pc.toPlan}</TableCell>
+                        <TableCell>
+                          <Badge variant='outline' className={cfg.className}>{cfg.label}</Badge>
+                        </TableCell>
+                        <TableCell className='text-right text-muted-foreground'>
+                          {formatRelativeTime(new Date(pc.createdAt))}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
               </TableBody>
             </Table>
           </CardContent>

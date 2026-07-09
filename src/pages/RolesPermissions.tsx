@@ -1,12 +1,19 @@
 import { useState, type FC } from 'react';
 import { motion } from 'framer-motion';
-import { Shield, Users, Edit, Trash2, Plus, UserPlus } from 'lucide-react';
+import { Shield, Users, Edit, Trash2, Plus, UserPlus, Lock, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -24,280 +31,154 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { toast } from 'sonner';
+import { ApiError } from '@/lib/api-client';
+import {
+  useRoles,
+  useTeamMembers,
+  useCreateRole,
+  useUpdateRole,
+  useDeleteRole,
+  useAssignRole,
+  useInviteTeamMember,
+} from '@/hooks/useRoles';
+import type { ApiRole, TeamMember } from '@/types/roles';
+import { ALL_PERMISSIONS } from '@/types/roles';
 
-interface Permission {
-  id: string;
-  label: string;
-  description: string;
-}
-
-interface Role {
-  id: string;
-  name: string;
-  description: string;
-  permissions: string[];
-  color: string;
-  userCount: number;
-}
-
-interface TeamMember {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-  lastActive: Date;
-  avatar: string;
-}
-
-const allPermissions: Permission[] = [
-  { id: 'users.view', label: 'View Users', description: 'View user accounts and profiles' },
-  { id: 'users.manage', label: 'Manage Users', description: 'Create, edit, suspend user accounts' },
-  { id: 'businesses.view', label: 'View Businesses', description: 'View business accounts' },
-  {
-    id: 'businesses.manage',
-    label: 'Manage Businesses',
-    description: 'Edit, suspend, approve businesses',
-  },
-  { id: 'billing.view', label: 'View Billing', description: 'View invoices and payment info' },
-  { id: 'billing.manage', label: 'Manage Billing', description: 'Process refunds, adjust plans' },
-  { id: 'analytics.view', label: 'View Analytics', description: 'Access analytics dashboards' },
-  { id: 'api.manage', label: 'Manage API Keys', description: 'Generate and revoke API keys' },
-  { id: 'system.settings', label: 'System Settings', description: 'Modify platform configuration' },
-  {
-    id: 'ai.manage',
-    label: 'Manage AI Settings',
-    description: 'Configure AI query limits and models',
-  },
-  { id: 'logs.view', label: 'View Activity Logs', description: 'Access audit and activity logs' },
-  {
-    id: 'roles.manage',
-    label: 'Manage Roles',
-    description: 'Create and edit roles and permissions',
-  },
+const ROLE_COLORS = [
+  'hsl(217, 91%, 60%)',
+  'hsl(270, 70%, 60%)',
+  'hsl(174, 72%, 50%)',
+  'hsl(40, 90%, 55%)',
+  'hsl(0, 70%, 60%)',
 ];
 
-const initialRoles: Role[] = [
-  {
-    id: 'r1',
-    name: 'Admin',
-    description: 'Full platform access with all permissions',
-    permissions: allPermissions.map((p) => p.id),
-    color: 'hsl(217, 91%, 60%)',
-    userCount: 2,
-  },
-  {
-    id: 'r2',
-    name: 'Manager',
-    description: 'Business and user management without system settings',
-    permissions: [
-      'users.view',
-      'users.manage',
-      'businesses.view',
-      'businesses.manage',
-      'analytics.view',
-      'logs.view',
-      'billing.view',
-    ],
-    color: 'hsl(270, 70%, 60%)',
-    userCount: 3,
-  },
-  {
-    id: 'r3',
-    name: 'Support',
-    description: 'View-only access with limited user management',
-    permissions: ['users.view', 'businesses.view', 'billing.view', 'logs.view'],
-    color: 'hsl(174, 72%, 50%)',
-    userCount: 4,
-  },
-  {
-    id: 'r4',
-    name: 'Billing',
-    description: 'Full billing access with view-only user access',
-    permissions: ['users.view', 'businesses.view', 'billing.view', 'billing.manage', 'logs.view'],
-    color: 'hsl(40, 90%, 55%)',
-    userCount: 2,
-  },
-];
-
-const initialMembers: TeamMember[] = [
-  {
-    id: 'm1',
-    name: 'Sarah Chen',
-    email: 'sarah@servixos.com',
-    role: 'Admin',
-    lastActive: new Date(Date.now() - 300000),
-    avatar: 'SC',
-  },
-  {
-    id: 'm2',
-    name: 'James Wilson',
-    email: 'james@servixos.com',
-    role: 'Billing',
-    lastActive: new Date(Date.now() - 1800000),
-    avatar: 'JW',
-  },
-  {
-    id: 'm3',
-    name: 'Maria Lopez',
-    email: 'maria@servixos.com',
-    role: 'Support',
-    lastActive: new Date(Date.now() - 3600000),
-    avatar: 'ML',
-  },
-  {
-    id: 'm4',
-    name: 'David Kim',
-    email: 'david@servixos.com',
-    role: 'Manager',
-    lastActive: new Date(Date.now() - 7200000),
-    avatar: 'DK',
-  },
-  {
-    id: 'm5',
-    name: 'Alex Torres',
-    email: 'alex@servixos.com',
-    role: 'Support',
-    lastActive: new Date(Date.now() - 14400000),
-    avatar: 'AT',
-  },
-  {
-    id: 'm6',
-    name: 'Lisa Park',
-    email: 'lisa@servixos.com',
-    role: 'Manager',
-    lastActive: new Date(Date.now() - 21600000),
-    avatar: 'LP',
-  },
-  {
-    id: 'm7',
-    name: 'Ryan Mitchell',
-    email: 'ryan@servixos.com',
-    role: 'Support',
-    lastActive: new Date(Date.now() - 43200000),
-    avatar: 'RM',
-  },
-  {
-    id: 'm8',
-    name: 'Emma Davis',
-    email: 'emma@servixos.com',
-    role: 'Admin',
-    lastActive: new Date(Date.now() - 86400000),
-    avatar: 'ED',
-  },
-  {
-    id: 'm9',
-    name: 'Chris Yang',
-    email: 'chris@servixos.com',
-    role: 'Manager',
-    lastActive: new Date(Date.now() - 172800000),
-    avatar: 'CY',
-  },
-  {
-    id: 'm10',
-    name: 'Nina Brown',
-    email: 'nina@servixos.com',
-    role: 'Support',
-    lastActive: new Date(Date.now() - 259200000),
-    avatar: 'NB',
-  },
-  {
-    id: 'm11',
-    name: 'Tom Harris',
-    email: 'tom@servixos.com',
-    role: 'Billing',
-    lastActive: new Date(Date.now() - 345600000),
-    avatar: 'TH',
-  },
-];
-
-function timeAgo(date: Date): string {
-  const mins = Math.floor((Date.now() - date.getTime()) / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+function initials(m: TeamMember): string {
+  return `${m.firstName[0] ?? ''}${m.lastName[0] ?? ''}`.toUpperCase();
 }
 
 const RolesPermissions: FC = () => {
-  const [roles, setRoles] = useState<Role[]>(initialRoles);
-  const [members, setMembers] = useState<TeamMember[]>(initialMembers);
-  const [editRole, setEditRole] = useState<Role | null>(null);
-  const [deleteRole, setDeleteRole] = useState<Role | null>(null);
+  const { data: roles = [], isLoading: rolesLoading } = useRoles();
+  const { data: members = [], isLoading: membersLoading } = useTeamMembers();
+
+  const createRole = useCreateRole();
+  const updateRole = useUpdateRole();
+  const deleteRole = useDeleteRole();
+  const assignRole = useAssignRole();
+  const inviteMember = useInviteTeamMember();
+
+  // Create role dialog
   const [createOpen, setCreateOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+  const [newPerms, setNewPerms] = useState<string[]>([]);
+
+  // Edit role dialog
+  const [editRole, setEditRole] = useState<ApiRole | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editPerms, setEditPerms] = useState<string[]>([]);
+
+  // Delete dialog
+  const [deleteTarget, setDeleteTarget] = useState<ApiRole | null>(null);
+
+  // Assign role dialog
   const [assignOpen, setAssignOpen] = useState(false);
-  const [newRoleName, setNewRoleName] = useState('');
-  const [newRoleDesc, setNewRoleDesc] = useState('');
-  const [selectedPerms, setSelectedPerms] = useState<string[]>([]);
   const [assignMemberId, setAssignMemberId] = useState('');
   const [assignRoleId, setAssignRoleId] = useState('');
 
-  const togglePerm = (permId: string) => {
-    setSelectedPerms((prev) =>
-      prev.includes(permId) ? prev.filter((p) => p !== permId) : [...prev, permId]
-    );
+  // Invite dialog
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteFirst, setInviteFirst] = useState('');
+  const [inviteLast, setInviteLast] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRoleId, setInviteRoleId] = useState('');
+
+  const togglePerm = (key: string, current: string[], set: (p: string[]) => void) => {
+    set(current.includes(key) ? current.filter((k) => k !== key) : [...current, key]);
   };
 
-  const handleCreateRole = () => {
-    if (!newRoleName.trim()) {
-      toast.error('Role name is required');
-      return;
+  const handleCreate = async () => {
+    if (!newName.trim()) { toast.error('Role name is required'); return; }
+    try {
+      await createRole.mutateAsync({ name: newName.trim(), description: newDesc.trim(), permissions: newPerms });
+      toast.success(`Role "${newName}" created`);
+      setCreateOpen(false);
+      setNewName(''); setNewDesc(''); setNewPerms([]);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Create failed');
     }
-    if (selectedPerms.length === 0) {
-      toast.error('Select at least one permission');
-      return;
-    }
-    const newRole: Role = {
-      id: `r${Date.now()}`,
-      name: newRoleName.trim(),
-      description: newRoleDesc.trim(),
-      permissions: selectedPerms,
-      color: `hsl(${Math.floor(Math.random() * 360)}, 70%, 55%)`,
-      userCount: 0,
-    };
-    setRoles((prev) => [...prev, newRole]);
-    setCreateOpen(false);
-    setNewRoleName('');
-    setNewRoleDesc('');
-    setSelectedPerms([]);
-    toast.success(`Role "${newRole.name}" created`);
   };
 
-  const handleUpdateRole = () => {
-    if (!editRole) return;
-    setRoles((prev) =>
-      prev.map((r) => (r.id === editRole.id ? { ...r, permissions: selectedPerms } : r))
-    );
-    setEditRole(null);
-    setSelectedPerms([]);
-    toast.success('Role permissions updated');
-  };
-
-  const handleDeleteRole = () => {
-    if (!deleteRole) return;
-    setRoles((prev) => prev.filter((r) => r.id !== deleteRole.id));
-    setDeleteRole(null);
-    toast.success(`Role "${deleteRole.name}" deleted`);
-  };
-
-  const handleAssignRole = () => {
-    if (!assignMemberId || !assignRoleId) {
-      toast.error('Select a member and role');
-      return;
-    }
-    const role = roles.find((r) => r.id === assignRoleId);
-    if (!role) return;
-    setMembers((prev) =>
-      prev.map((m) => (m.id === assignMemberId ? { ...m, role: role.name } : m))
-    );
-    setAssignOpen(false);
-    setAssignMemberId('');
-    setAssignRoleId('');
-    toast.success('Role assigned successfully');
-  };
-
-  const openEdit = (role: Role) => {
+  const openEdit = (role: ApiRole) => {
     setEditRole(role);
-    setSelectedPerms([...role.permissions]);
+    setEditName(role.name);
+    setEditDesc(role.description);
+    setEditPerms([...role.permissions]);
+  };
+
+  const handleUpdate = async () => {
+    if (!editRole) return;
+    try {
+      await updateRole.mutateAsync({
+        id: editRole.id,
+        ...(!editRole.isSystem && { name: editName.trim() }),
+        description: editDesc.trim(),
+        permissions: editPerms,
+      });
+      toast.success('Role updated');
+      setEditRole(null);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Update failed');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.isSystem) { toast.error('System roles cannot be deleted'); return; }
+    if (deleteTarget.memberCount > 0) { toast.error('Remove all members before deleting this role'); return; }
+    try {
+      await deleteRole.mutateAsync(deleteTarget.id);
+      toast.success(`Role "${deleteTarget.name}" deleted`);
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Delete failed');
+    }
+  };
+
+  const handleAssign = async () => {
+    if (!assignMemberId || !assignRoleId) { toast.error('Select a member and role'); return; }
+    try {
+      const res = await assignRole.mutateAsync({ adminId: assignMemberId, roleId: assignRoleId });
+      toast.success(`Role "${res.roleName}" assigned`);
+      setAssignOpen(false);
+      setAssignMemberId(''); setAssignRoleId('');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Assign failed');
+    }
+  };
+
+  const handleInvite = async () => {
+    if (!inviteFirst.trim() || !inviteLast.trim() || !inviteEmail.trim()) {
+      toast.error('First name, last name and email are required');
+      return;
+    }
+    try {
+      await inviteMember.mutateAsync({
+        firstName: inviteFirst.trim(),
+        lastName: inviteLast.trim(),
+        email: inviteEmail.trim(),
+        ...(inviteRoleId && { roleId: inviteRoleId }),
+      });
+      toast.success(`Invitation sent to ${inviteEmail}`);
+      setInviteOpen(false);
+      setInviteFirst(''); setInviteLast(''); setInviteEmail(''); setInviteRoleId('');
+    } catch (err) {
+      if (err instanceof ApiError && err.statusCode === 403) {
+        toast.error('Only the super admin can invite new admins');
+      } else {
+        toast.error(err instanceof ApiError ? err.message : 'Invite failed');
+      }
+    }
   };
 
   return (
@@ -308,74 +189,78 @@ const RolesPermissions: FC = () => {
           <p className='text-sm text-muted-foreground'>Manage admin roles and team member access</p>
         </div>
         <div className='flex gap-2'>
-          <Button variant='outline' onClick={() => setAssignOpen(true)} className='gap-2'>
-            <UserPlus size={16} /> Assign Role
+          <Button variant='outline' onClick={() => setInviteOpen(true)} className='gap-2'>
+            <UserPlus size={16} /> Invite Admin
           </Button>
-          <Button
-            onClick={() => {
-              setCreateOpen(true);
-              setSelectedPerms([]);
-            }}
-            className='gap-2'
-          >
+          <Button onClick={() => { setCreateOpen(true); setNewPerms([]); }} className='gap-2 gradient-bg text-primary-foreground'>
             <Plus size={16} /> Create Role
           </Button>
         </div>
       </div>
 
       {/* Role cards */}
-      <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
-        {roles.map((role, i) => (
-          <motion.div
-            key={role.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-          >
-            <Card className='relative overflow-hidden h-full'>
-              <div
-                className='absolute left-0 top-0 h-1 w-full'
-                style={{ background: role.color }}
-              />
-              <CardContent className='p-5'>
-                <div className='flex items-start justify-between'>
-                  <div>
-                    <div className='flex items-center gap-2'>
-                      <Shield size={18} style={{ color: role.color }} />
-                      <h3 className='font-semibold text-foreground'>{role.name}</h3>
+      {rolesLoading ? (
+        <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className='h-32 animate-pulse rounded-xl bg-muted/40' />
+          ))}
+        </div>
+      ) : (
+        <div className='grid gap-4 sm:grid-cols-2 lg:grid-cols-4'>
+          {roles.map((role, i) => {
+            const color = ROLE_COLORS[i % ROLE_COLORS.length];
+            return (
+              <motion.div
+                key={role.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.08 }}
+              >
+                <Card className='relative overflow-hidden h-full'>
+                  <div className='absolute left-0 top-0 h-1 w-full' style={{ background: color }} />
+                  <CardContent className='p-5'>
+                    <div className='flex items-start justify-between'>
+                      <div>
+                        <div className='flex items-center gap-2'>
+                          {role.isSystem
+                            ? <Lock size={16} style={{ color }} />
+                            : <Shield size={16} style={{ color }} />}
+                          <h3 className='font-semibold text-foreground'>{role.name}</h3>
+                        </div>
+                        <p className='mt-1 text-xs text-muted-foreground line-clamp-2'>{role.description}</p>
+                      </div>
+                      <div className='flex gap-1 shrink-0'>
+                        <button
+                          onClick={() => openEdit(role)}
+                          className='rounded p-1 text-muted-foreground hover:text-foreground'
+                        >
+                          <Edit size={14} />
+                        </button>
+                        {!role.isSystem && (
+                          <button
+                            onClick={() => setDeleteTarget(role)}
+                            className='rounded p-1 text-muted-foreground hover:text-destructive'
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <p className='mt-1 text-xs text-muted-foreground'>{role.description}</p>
-                  </div>
-                  <div className='flex gap-1'>
-                    <button
-                      onClick={() => openEdit(role)}
-                      className='rounded p-1 text-muted-foreground hover:text-foreground'
-                    >
-                      <Edit size={14} />
-                    </button>
-                    {role.name !== 'Admin' && (
-                      <button
-                        onClick={() => setDeleteRole(role)}
-                        className='rounded p-1 text-muted-foreground hover:text-destructive'
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className='mt-3 flex items-center justify-between'>
-                  <span className='text-xs text-muted-foreground'>
-                    {role.permissions.length} permissions
-                  </span>
-                  <div className='flex items-center gap-1 text-xs text-muted-foreground'>
-                    <Users size={12} /> {members.filter((m) => m.role === role.name).length}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
+                    <div className='mt-3 flex items-center justify-between'>
+                      <span className='text-xs text-muted-foreground'>
+                        {role.permissions.length} permissions
+                      </span>
+                      <div className='flex items-center gap-1 text-xs text-muted-foreground'>
+                        <Users size={12} /> {role.memberCount}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Team members table */}
       <motion.div
@@ -394,59 +279,74 @@ const RolesPermissions: FC = () => {
                   <TableRow>
                     <TableHead>Member</TableHead>
                     <TableHead>Role</TableHead>
-                    <TableHead>Last Active</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead className='text-right'>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {members.map((m) => {
-                    const role = roles.find((r) => r.name === m.role);
-                    return (
-                      <TableRow key={m.id}>
-                        <TableCell>
-                          <div className='flex items-center gap-3'>
-                            <div className='flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary'>
-                              {m.avatar}
-                            </div>
-                            <div>
-                              <p className='font-medium text-foreground'>{m.name}</p>
-                              <p className='text-xs text-muted-foreground'>{m.email}</p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            style={{
-                              backgroundColor: role?.color
-                                ? `${role.color.replace(')', ' / 0.15)')}`
-                                : undefined,
-                              color: role?.color,
-                              borderColor: role?.color,
-                            }}
-                            variant='outline'
-                          >
-                            {m.role}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className='text-sm text-muted-foreground'>
-                          {timeAgo(m.lastActive)}
-                        </TableCell>
-                        <TableCell className='text-right'>
-                          <Button
-                            variant='ghost'
-                            size='sm'
-                            onClick={() => {
-                              setAssignOpen(true);
-                              setAssignMemberId(m.id);
-                            }}
-                            className='text-xs'
-                          >
-                            Change Role
-                          </Button>
-                        </TableCell>
+                  {membersLoading ? (
+                    [...Array(5)].map((_, i) => (
+                      <TableRow key={i}>
+                        {[...Array(4)].map((__, j) => (
+                          <TableCell key={j}>
+                            <div className='h-4 animate-pulse rounded bg-muted/60' />
+                          </TableCell>
+                        ))}
                       </TableRow>
-                    );
-                  })}
+                    ))
+                  ) : members.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className='py-8 text-center text-muted-foreground'>
+                        No team members yet. Invite an admin to get started.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    members.map((m) => {
+                      const memberRoleColor = roleColor_by_name(m.roleName, roles);
+                      return (
+                        <TableRow key={m.id}>
+                          <TableCell>
+                            <div className='flex items-center gap-3'>
+                              <div className='flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary'>
+                                {initials(m)}
+                              </div>
+                              <div>
+                                <p className='font-medium text-foreground'>{m.firstName} {m.lastName}</p>
+                                <p className='text-xs text-muted-foreground'>{m.email}</p>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant='outline'
+                              style={{
+                                backgroundColor: memberRoleColor ? `${memberRoleColor}22` : undefined,
+                                color: memberRoleColor,
+                                borderColor: memberRoleColor ? `${memberRoleColor}44` : undefined,
+                              }}
+                            >
+                              {m.roleName}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant='outline' className={m.isActive ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : 'bg-muted text-muted-foreground'}>
+                              {m.isActive ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className='text-right'>
+                            <Button
+                              variant='ghost'
+                              size='sm'
+                              onClick={() => { setAssignOpen(true); setAssignMemberId(m.id); setAssignRoleId(''); }}
+                              className='text-xs'
+                            >
+                              Change Role
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
                 </TableBody>
               </Table>
             </div>
@@ -456,7 +356,7 @@ const RolesPermissions: FC = () => {
 
       {/* Create Role Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className='sm:max-w-lg max-h-[80vh] overflow-y-auto'>
+        <DialogContent className='sm:max-w-lg max-h-[85vh] overflow-y-auto'>
           <DialogHeader>
             <DialogTitle>Create New Role</DialogTitle>
             <DialogDescription>Define a new role with specific permissions.</DialogDescription>
@@ -464,102 +364,99 @@ const RolesPermissions: FC = () => {
           <div className='space-y-4'>
             <div>
               <Label>Role Name</Label>
-              <Input
-                value={newRoleName}
-                onChange={(e) => setNewRoleName(e.target.value)}
-                placeholder='e.g. Editor'
-                className='mt-1.5'
-              />
+              <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder='e.g. Editor' className='mt-1.5' />
             </div>
             <div>
               <Label>Description</Label>
-              <Input
-                value={newRoleDesc}
-                onChange={(e) => setNewRoleDesc(e.target.value)}
-                placeholder='Brief description'
-                className='mt-1.5'
-              />
+              <Input value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder='Brief description' className='mt-1.5' />
             </div>
             <div>
               <Label>Permissions</Label>
-              <div className='mt-2 space-y-2 max-h-48 overflow-y-auto'>
-                {allPermissions.map((p) => (
-                  <label
-                    key={p.id}
-                    className='flex items-start gap-3 rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/50'
-                  >
+              <div className='mt-2 grid grid-cols-1 gap-2 max-h-52 overflow-y-auto'>
+                {ALL_PERMISSIONS.map((p) => (
+                  <label key={p.key} className='flex items-center gap-3 rounded-lg border border-border p-2.5 cursor-pointer hover:bg-muted/50'>
                     <Checkbox
-                      checked={selectedPerms.includes(p.id)}
-                      onCheckedChange={() => togglePerm(p.id)}
-                      className='mt-0.5'
+                      checked={newPerms.includes(p.key)}
+                      onCheckedChange={() => togglePerm(p.key, newPerms, setNewPerms)}
                     />
-                    <div>
-                      <p className='text-sm font-medium text-foreground'>{p.label}</p>
-                      <p className='text-xs text-muted-foreground'>{p.description}</p>
-                    </div>
+                    <span className='text-sm'>{p.label}</span>
                   </label>
                 ))}
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant='outline' onClick={() => setCreateOpen(false)}>
-              Cancel
+            <Button variant='outline' onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={() => void handleCreate()} disabled={createRole.isPending}>
+              {createRole.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              Create Role
             </Button>
-            <Button onClick={handleCreateRole}>Create Role</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Edit Role Dialog */}
-      <Dialog open={!!editRole} onOpenChange={() => setEditRole(null)}>
-        <DialogContent className='sm:max-w-lg max-h-[80vh] overflow-y-auto'>
+      <Dialog open={!!editRole} onOpenChange={(open) => !open && setEditRole(null)}>
+        <DialogContent className='sm:max-w-lg max-h-[85vh] overflow-y-auto'>
           <DialogHeader>
-            <DialogTitle>Edit {editRole?.name} Permissions</DialogTitle>
-            <DialogDescription>Update the permissions for this role.</DialogDescription>
+            <DialogTitle>Edit {editRole?.name}</DialogTitle>
+            <DialogDescription>Update role details and permissions.</DialogDescription>
           </DialogHeader>
-          <div className='space-y-2 max-h-96 overflow-y-auto'>
-            {allPermissions.map((p) => (
-              <label
-                key={p.id}
-                className='flex items-start gap-3 rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/50'
-              >
-                <Checkbox
-                  checked={selectedPerms.includes(p.id)}
-                  onCheckedChange={() => togglePerm(p.id)}
-                  className='mt-0.5'
-                />
-                <div>
-                  <p className='text-sm font-medium text-foreground'>{p.label}</p>
-                  <p className='text-xs text-muted-foreground'>{p.description}</p>
-                </div>
-              </label>
-            ))}
+          <div className='space-y-4'>
+            <div>
+              <Label>Role Name</Label>
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                disabled={editRole?.isSystem}
+                className='mt-1.5'
+              />
+              {editRole?.isSystem && (
+                <p className='mt-1 text-xs text-muted-foreground'>System role names cannot be changed.</p>
+              )}
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input value={editDesc} onChange={(e) => setEditDesc(e.target.value)} className='mt-1.5' />
+            </div>
+            <div>
+              <Label>Permissions</Label>
+              <div className='mt-2 grid grid-cols-1 gap-2 max-h-52 overflow-y-auto'>
+                {ALL_PERMISSIONS.map((p) => (
+                  <label key={p.key} className='flex items-center gap-3 rounded-lg border border-border p-2.5 cursor-pointer hover:bg-muted/50'>
+                    <Checkbox
+                      checked={editPerms.includes(p.key)}
+                      onCheckedChange={() => togglePerm(p.key, editPerms, setEditPerms)}
+                    />
+                    <span className='text-sm'>{p.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
           <DialogFooter>
-            <Button variant='outline' onClick={() => setEditRole(null)}>
-              Cancel
+            <Button variant='outline' onClick={() => setEditRole(null)}>Cancel</Button>
+            <Button onClick={() => void handleUpdate()} disabled={updateRole.isPending}>
+              {updateRole.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              Save Changes
             </Button>
-            <Button onClick={handleUpdateRole}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Role Confirm */}
-      <Dialog open={!!deleteRole} onOpenChange={() => setDeleteRole(null)}>
+      {/* Delete Confirm Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <DialogContent className='sm:max-w-sm'>
           <DialogHeader>
             <DialogTitle>Delete Role</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete the <strong>{deleteRole?.name}</strong> role? Members
-              with this role will need to be reassigned.
+              Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant='outline' onClick={() => setDeleteRole(null)}>
-              Cancel
-            </Button>
-            <Button variant='destructive' onClick={handleDeleteRole}>
+            <Button variant='outline' onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant='destructive' onClick={() => void handleDelete()} disabled={deleteRole.isPending}>
+              {deleteRole.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
               Delete
             </Button>
           </DialogFooter>
@@ -576,45 +473,96 @@ const RolesPermissions: FC = () => {
           <div className='space-y-4'>
             <div>
               <Label>Team Member</Label>
-              <select
-                value={assignMemberId}
-                onChange={(e) => setAssignMemberId(e.target.value)}
-                className='mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-              >
-                <option value=''>Select member...</option>
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} ({m.email})
-                  </option>
-                ))}
-              </select>
+              <Select value={assignMemberId} onValueChange={setAssignMemberId}>
+                <SelectTrigger className='mt-1.5 w-full'>
+                  <SelectValue placeholder='Select member...' />
+                </SelectTrigger>
+                <SelectContent>
+                  {members.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.firstName} {m.lastName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Role</Label>
-              <select
-                value={assignRoleId}
-                onChange={(e) => setAssignRoleId(e.target.value)}
-                className='mt-1.5 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-              >
-                <option value=''>Select role...</option>
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
+              <Select value={assignRoleId} onValueChange={setAssignRoleId}>
+                <SelectTrigger className='mt-1.5 w-full'>
+                  <SelectValue placeholder='Select role...' />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button variant='outline' onClick={() => setAssignOpen(false)}>
-              Cancel
+            <Button variant='outline' onClick={() => setAssignOpen(false)}>Cancel</Button>
+            <Button onClick={() => void handleAssign()} disabled={assignRole.isPending}>
+              {assignRole.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              Assign
             </Button>
-            <Button onClick={handleAssignRole}>Assign</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite Admin Dialog */}
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent className='sm:max-w-md'>
+          <DialogHeader>
+            <DialogTitle>Invite Admin</DialogTitle>
+            <DialogDescription>Send an invitation to a new admin team member.</DialogDescription>
+          </DialogHeader>
+          <div className='space-y-4'>
+            <div className='grid grid-cols-2 gap-3'>
+              <div>
+                <Label>First Name</Label>
+                <Input value={inviteFirst} onChange={(e) => setInviteFirst(e.target.value)} placeholder='Jane' className='mt-1.5' />
+              </div>
+              <div>
+                <Label>Last Name</Label>
+                <Input value={inviteLast} onChange={(e) => setInviteLast(e.target.value)} placeholder='Doe' className='mt-1.5' />
+              </div>
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input type='email' value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder='jane@admin.com' className='mt-1.5' />
+            </div>
+            <div>
+              <Label>Role <span className='text-muted-foreground'>(optional)</span></Label>
+              <Select value={inviteRoleId} onValueChange={setInviteRoleId}>
+                <SelectTrigger className='mt-1.5 w-full'>
+                  <SelectValue placeholder='Assign a role...' />
+                </SelectTrigger>
+                <SelectContent>
+                  {roles.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant='outline' onClick={() => setInviteOpen(false)} disabled={inviteMember.isPending}>Cancel</Button>
+            <Button onClick={() => void handleInvite()} disabled={inviteMember.isPending} className='gradient-bg text-primary-foreground'>
+              {inviteMember.isPending && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
+              Send Invitation
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   );
 };
+
+function roleColor_by_name(roleName: string, roles: ApiRole[]): string | undefined {
+  const idx = roles.findIndex((r) => r.name === roleName);
+  if (idx === -1) return undefined;
+  return ROLE_COLORS[idx % ROLE_COLORS.length];
+}
 
 export default RolesPermissions;
