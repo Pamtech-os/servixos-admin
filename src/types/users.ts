@@ -40,13 +40,6 @@ export interface UsersQueryParams {
   role: UserRoleFilter;
 }
 
-export interface InviteUserPayload {
-  fullName: string;
-  email: string;
-  role: 'owner' | 'employee';
-  businessName?: string;
-}
-
 export function deriveUserStatus(user: ApiUser): 'active' | 'suspended' | 'pending' {
   if (!user.isEmailVerified) return 'pending';
   return user.isActive ? 'active' : 'suspended';

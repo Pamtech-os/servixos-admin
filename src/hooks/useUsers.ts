@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { usersService } from '@/services/users.service';
-import type { UsersQueryParams, InviteUserPayload } from '@/types/users';
+import type { UsersQueryParams } from '@/types/users';
 
 export const useUsers = (params: UsersQueryParams) =>
   useQuery({
@@ -23,14 +23,6 @@ export const useBulkToggleSuspendUsers = () => {
   return useMutation({
     mutationFn: ({ userIds, suspend }: { userIds: string[]; suspend?: boolean }) =>
       usersService.bulkToggleSuspend(userIds, suspend),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
-  });
-};
-
-export const useInviteUser = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: InviteUserPayload) => usersService.invite(payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
   });
 };
