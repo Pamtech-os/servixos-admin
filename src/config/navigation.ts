@@ -9,6 +9,7 @@ import {
   Brain,
   Shield,
   LifeBuoy,
+  Hourglass,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -26,6 +27,7 @@ export const navItems: NavItem[] = [
   { label: 'Analytics',         href: '/analytics',    icon: BarChart3 },
   { label: 'Activity Logs',     href: '/activity-logs',icon: ClipboardList },
   { label: 'Reports',           href: '/reports',      icon: FileBarChart2 },
+  { label: 'Waitlist',          href: '/waitlist',     icon: Hourglass },
   { label: 'AI Consumption',    href: '/ai-consumption',icon: Brain },
   { label: 'Roles & Permissions',href: '/roles',       icon: Shield },
   { label: 'Support',           href: '/support',      icon: LifeBuoy },
