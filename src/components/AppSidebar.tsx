@@ -1,9 +1,15 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, memo, type FC } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LogOut, Menu, X, Moon, Sun } from 'lucide-react';
+import { LogOut, Menu, X, Moon, Sun, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { navItems } from '@/config/navigation';
+import {
+  navEntries,
+  isNavGroup,
+  isNavItemActive,
+  type NavGroup,
+  type NavItem,
+} from '@/config/navigation';
 import servixLogo from '@/assets/servix-logo.png';
 
 const SidebarLogo = memo(() => (
@@ -14,11 +20,96 @@ const SidebarLogo = memo(() => (
 ));
 SidebarLogo.displayName = 'SidebarLogo';
 
+interface NavLinkItemProps {
+  item: NavItem;
+  active: boolean;
+  nested?: boolean;
+  onNavigate: () => void;
+}
+
+const NavLinkItem: FC<NavLinkItemProps> = ({ item, active, nested, onNavigate }) => (
+  <Link
+    to={item.href}
+    onClick={onNavigate}
+    aria-current={active ? 'page' : undefined}
+    className={`flex items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors ${
+      nested ? 'py-2' : 'py-2.5'
+    } ${
+      active
+        ? 'bg-primary/10 text-primary'
+        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+    }`}
+  >
+    <item.icon size={nested ? 16 : 18} />
+    {item.label}
+  </Link>
+);
+
+interface NavGroupMenuProps {
+  group: NavGroup;
+  pathname: string;
+  open: boolean;
+  onToggle: () => void;
+  onNavigate: () => void;
+}
+
+const NavGroupMenu: FC<NavGroupMenuProps> = ({ group, pathname, open, onToggle, onNavigate }) => {
+  const containsActive = group.items.some((item) => isNavItemActive(item, pathname));
+  const panelId = `nav-group-${group.label.toLowerCase().replace(/\s+/g, '-')}`;
+
+  return (
+    <div>
+      <button
+        type='button'
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors hover:bg-muted hover:text-foreground ${
+          containsActive && !open ? 'text-primary' : 'text-muted-foreground'
+        }`}
+      >
+        <group.icon size={18} />
+        <span className='flex-1 text-left'>{group.label}</span>
+        <ChevronDown
+          size={16}
+          className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            id={panelId}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className='overflow-hidden'
+          >
+            <div className='ml-5 mt-1 space-y-1 border-l border-border pl-2'>
+              {group.items.map((item) => (
+                <NavLinkItem
+                  key={item.href}
+                  item={item}
+                  active={isNavItemActive(item, pathname)}
+                  nested
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 const AppSidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Explicit open/closed choices; groups without one default to open when they hold the active route
+  const [groupToggles, setGroupToggles] = useState<Record<string, boolean>>({});
   const [dark, setDark] = useState(
     () =>
       typeof window !== 'undefined' &&
@@ -40,6 +131,16 @@ const AppSidebar = () => {
     setDark((prev) => !prev);
   };
 
+  const closeMobile = () => setMobileOpen(false);
+
+  const resolveGroupOpen = (group: NavGroup, toggles: Record<string, boolean>) =>
+    toggles[group.label] ?? group.items.some((item) => isNavItemActive(item, location.pathname));
+
+  const isGroupOpen = (group: NavGroup) => resolveGroupOpen(group, groupToggles);
+
+  const toggleGroup = (group: NavGroup) =>
+    setGroupToggles((prev) => ({ ...prev, [group.label]: !resolveGroupOpen(group, prev) }));
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -49,25 +150,25 @@ const AppSidebar = () => {
     <div className='flex h-full flex-col'>
       <SidebarLogo />
       <nav className='flex-1 space-y-1 overflow-y-auto px-3 py-4'>
-        {navItems.map((item) => {
-          const isActive =
-            location.pathname === item.href || location.pathname.startsWith(item.href + '/');
-          return (
-            <Link
-              key={item.href}
-              to={item.href}
-              onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              <item.icon size={18} />
-              {item.label}
-            </Link>
-          );
-        })}
+        {navEntries.map((entry) =>
+          isNavGroup(entry) ? (
+            <NavGroupMenu
+              key={entry.label}
+              group={entry}
+              pathname={location.pathname}
+              open={isGroupOpen(entry)}
+              onToggle={() => toggleGroup(entry)}
+              onNavigate={closeMobile}
+            />
+          ) : (
+            <NavLinkItem
+              key={entry.href}
+              item={entry}
+              active={isNavItemActive(entry, location.pathname)}
+              onNavigate={closeMobile}
+            />
+          )
+        )}
       </nav>
       <div className='space-y-1 border-t border-border px-3 py-4'>
         <button

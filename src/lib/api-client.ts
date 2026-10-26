@@ -1,6 +1,6 @@
 import { storage } from './storage';
 
-const BASE = (import.meta.env.VITE_API_URL as string).replace(/\/$/, '');
+const BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/$/, '');
 const PREFIX = '/api/admin/api';
 
 export class ApiError extends Error {
@@ -56,7 +56,8 @@ interface RequestOptions extends RequestInit {
   _isRetry?: boolean;
 }
 
-async function doRequest(path: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+// Performs the fetch with auth cookie + channel header, retrying once after a cookie refresh on 401.
+async function send(path: string, options: RequestOptions = {}): Promise<Response> {
   const { auth = true, _isRetry = false, ...fetchOpts } = options;
 
   const headers: Record<string, string> = {
@@ -70,9 +71,7 @@ async function doRequest(path: string, options: RequestOptions = {}): Promise<Re
     headers,
     credentials: 'include',
   });
-  const json = (await res.json()) as Record<string, unknown>;
 
-  // One retry after cookie refresh on 401
   if (res.status === 401 && !_isRetry && auth) {
     if (!_refreshPromise) {
       _refreshPromise = callRefresh().finally(() => {
@@ -81,10 +80,17 @@ async function doRequest(path: string, options: RequestOptions = {}): Promise<Re
     }
     const refreshed = await _refreshPromise;
     if (refreshed) {
-      return doRequest(path, { ...options, _isRetry: true });
+      return send(path, { ...options, _isRetry: true });
     }
     storage.clear();
   }
+
+  return res;
+}
+
+async function doRequest(path: string, options: RequestOptions = {}): Promise<Record<string, unknown>> {
+  const res = await send(path, options);
+  const json = (await res.json()) as Record<string, unknown>;
 
   if (!json.success) {
     throw new ApiError((json.message as string) ?? 'Request failed', (json.statusCode as number) ?? res.status);
@@ -112,4 +118,16 @@ export const apiClient = {
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body), ...opts }),
   delete: <T>(path: string, opts?: Pick<RequestOptions, 'auth'>) =>
     request<T>(path, { method: 'DELETE', ...opts }),
+  // For file downloads. Errors still arrive in the standard JSON envelope.
+  download: async (path: string): Promise<{ blob: Blob; filename: string | null }> => {
+    const res = await send(path, { method: 'GET' });
+    if (!res.ok) {
+      const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      throw new ApiError((json.message as string) ?? 'Download failed', (json.statusCode as number) ?? res.status);
+    }
+    // Requires the server to expose Content-Disposition via Access-Control-Expose-Headers.
+    const disposition = res.headers.get('Content-Disposition') ?? '';
+    const filename = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? null;
+    return { blob: await res.blob(), filename };
+  },
 };

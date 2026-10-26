@@ -15,6 +15,7 @@ import Subscriptions from '@/pages/Subscriptions';
 import Analytics from '@/pages/Analytics';
 import ActivityLogs from '@/pages/ActivityLogs';
 import Reports from '@/pages/Reports';
+import Waitlist from '@/pages/Waitlist';
 import AiConsumption from '@/pages/AiConsumption';
 import RolesPermissions from '@/pages/RolesPermissions';
 import Support from '@/pages/Support';
@@ -44,6 +45,7 @@ const App: FC = () => (
               <Route path='/subscriptions' element={<Subscriptions />} />
               <Route path='/analytics' element={<Analytics />} />
               <Route path='/reports' element={<Reports />} />
+              <Route path='/waitlist' element={<Waitlist />} />
               <Route path='/ai-consumption' element={<AiConsumption />} />
               <Route path='/roles' element={<RolesPermissions />} />
               <Route path='/support' element={<Support />} />
